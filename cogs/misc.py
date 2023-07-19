@@ -2,6 +2,7 @@ import discord
 from discord import option
 from discord.ext import commands
 
+from grammar import check_grammar
 from jsonedit import get_data, update_data
 from main import throw_error
 
@@ -22,17 +23,24 @@ class Misc(commands.Cog):
         mute_list = await get_data("mute")
         if message.author.id in mute_list:
             await message.delete()
-            await message.channel.send(f"<@{message.author.id}> You are muted")
+            await message.author.send("You are muted")
 
         if not message.author.bot:
+            grammar_list = await get_data("grammar")
             message_list = await get_data("autorespond")
+            if message.author.id in grammar_list:
+                if await check_grammar(message.content) != False:
+                    response = f"<@{message.author.id}> " + await check_grammar(
+                        message.content
+                    )
+                    await message.channel.send(response)
             if len(message_list) > 0:
                 for respond_config in message_list:
                     needle = respond_config["needle"]
                     needle.lower()
                     if " " not in needle:
                         message.content.lower()
-                        txt = message.content.split()  
+                        txt = message.content.split()
                     else:
                         txt = message.content.lower()
                     if needle in txt:
@@ -183,6 +191,19 @@ class Misc(commands.Cog):
     )  # ping command
     async def ping(self, ctx):
         await ctx.respond(f"Your latency is {round(self.bot.latency * 1000)} ms")
+
+    @commands.slash_command(
+        description="Toggle annoying grammar suggestions", guild_ids=GUILD_IDS
+    )
+    async def grammar(self, ctx):
+        grammarlist = await get_data("grammar")
+        if ctx.user.id in grammarlist:
+            grammarlist.remove(ctx.user.id)
+            await ctx.respond("You will no longer receive grammar suggestions. :(")
+        else:
+            grammarlist.append(ctx.user.id)
+            await ctx.respond("Time to fix your grammar! >:)")
+        await update_data("grammar", grammarlist)
 
 
 def setup(bot):
