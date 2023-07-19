@@ -28,8 +28,14 @@ class Misc(commands.Cog):
             message_list = await get_data("autorespond")
             if len(message_list) > 0:
                 for respond_config in message_list:
-                    txt = message.content.split()
-                    if respond_config["needle"] in txt:
+                    needle = respond_config["needle"]
+                    needle.lower()
+                    if " " not in needle:
+                        message.content.lower()
+                        txt = message.content.split()  
+                    else:
+                        txt = message.content.lower()
+                    if needle in txt:
                         await message.channel.send(respond_config["message"])
                         break
         if (
@@ -147,6 +153,7 @@ class Misc(commands.Cog):
     async def edit(self, ctx, index, answer):
         message_list = await get_data("autorespond")
         message_list[index]["message"] = answer
+        await update_data("autorespond", message_list)
         await ctx.respond("Autoresponse edited")
 
     @ar.command(description="Delete autoresponse triggers", guild_ids=GUILD_IDS)
