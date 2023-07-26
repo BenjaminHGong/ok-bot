@@ -6,6 +6,8 @@ from grammar import check_grammar
 from jsonedit import get_data, update_data
 from main import throw_error
 
+from complex import fibonacci, multi_msg
+
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
 
@@ -55,6 +57,47 @@ class Misc(commands.Cog):
         ):
             await message.delete()
             await message.channel.send("<#1034679492586778674>")
+    
+    @commands.slash_command(
+        description="Calculate big fibonacci numbers", guild_id=GUILD_IDS
+    )
+    @option("n", int, description="The nth term of the fibonacci sequence (0 <= n <= 1000000)")
+    async def fibonacci(self, ctx, n):
+        if n < 0:
+            ctx.respond("Please enter a positive integer.")
+        elif n > 10000001:
+            ctx.respond("Bruh way too big")
+        else:
+            message = "Working on it... The "
+            if n % 10 == 1 and n != 11:
+                message += f"{n}st " 
+            elif n % 10 == 2 and n != 12:
+                message += f"{n}nd " 
+            elif n % 10 == 3 and n != 13:
+                message += f"{n}rd " 
+            else:
+                message += f"{n}th "
+            message += "number in the fibonacci sequence is:"
+            await ctx.respond(message)
+            number = fibonacci(int(n))
+            messages = number[0]
+            messages = multi_msg(messages)
+            for item in messages:
+                await ctx.send(item)
+        
+
+    @commands.slash_command(
+        description="Toggle annoying grammar suggestions", guild_id=GUILD_IDS
+    )
+    async def grammar(self, ctx):
+        grammarlist = await get_data("grammar")
+        if ctx.user.id in grammarlist:
+            grammarlist.remove(ctx.user.id)
+            await ctx.respond("You will no longer receive grammar suggestions. :(")
+        else:
+            grammarlist.append(ctx.user.id)
+            await ctx.respond("Time to fix your grammar! >:)")
+        await update_data("grammar", grammarlist)
 
     @commands.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
     @commands.is_owner()
@@ -191,19 +234,6 @@ class Misc(commands.Cog):
     )  # ping command
     async def ping(self, ctx):
         await ctx.respond(f"Your latency is {round(self.bot.latency * 1000)} ms")
-
-    @commands.slash_command(
-        description="Toggle annoying grammar suggestions", guild_ids=GUILD_IDS
-    )
-    async def grammar(self, ctx):
-        grammarlist = await get_data("grammar")
-        if ctx.user.id in grammarlist:
-            grammarlist.remove(ctx.user.id)
-            await ctx.respond("You will no longer receive grammar suggestions. :(")
-        else:
-            grammarlist.append(ctx.user.id)
-            await ctx.respond("Time to fix your grammar! >:)")
-        await update_data("grammar", grammarlist)
 
 
 def setup(bot):
