@@ -137,13 +137,12 @@ class Brawlstars(commands.Cog):
         "item",
         str,
         description="Chances of the item drop",
-        autocomplete=starrdropAutocomplete,
+        autocomplete=basic_autocomplete(starrdropAutocomplete),
     )
     @option(
         "sf",
         int,
-        description="Number of significant figures",
-        autocomplete=basic_autocomplete(starrdropAutocomplete),
+        description="Number of significant figures"
     )
     async def drops(self, ctx, rarity=None, item=None, sf=4):
         if rarity and item:
