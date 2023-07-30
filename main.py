@@ -1,6 +1,7 @@
 import asyncio
 import os
 import random
+import subprocess
 from pathlib import Path
 
 import discord
@@ -59,6 +60,19 @@ async def throw_error(ctx, error):
         await ctx.respond("You don't have permission!", ephemeral=True)
     else:
         raise error
+
+
+@bot.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
+@commands.is_owner()
+async def restart(ctx):
+    await ctx.respond("Restarting...", ephemeral=True)
+    subprocess.Popen(["python", "main.py"])
+    exit()
+
+
+@restart.error
+async def restart_error(ctx, error):
+    throw_error(ctx, error)
 
 
 @bot.slash_command(description="Check if a cog is loaded", guild_ids=GUILD_IDS)
