@@ -1,3 +1,5 @@
+from math import ceil
+
 import discord
 from discord import option
 from discord.ext import commands
@@ -7,6 +9,79 @@ from main import throw_error
 
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
+
+
+class PaginationView(discord.ui.View):
+    current_page: int = 1
+    sep: int = 5
+
+    async def send(self, ctx):
+        self.message = await ctx.send(view=self)
+        await self.update_message(self.data[: self.sep])
+
+    def create_embed(self, data):
+        embed = discord.Embed(title="Autoresponse Triggers")
+        for key, value in data:
+            embed.add_field(name=key, value=value, inline=False)
+        return embed
+
+    async def update_message(self, data):
+        self.update_buttons()
+        await self.message.edit(embed=self.create_embed(data), view=self)
+
+    def update_buttons(self):
+        if self.current_page == 1:
+            self.first_page_button.disabled = True
+            self.prev_button.disabled = True
+        else:
+            self.first_page_button.disabled = False
+            self.prev_button.disabled = False
+
+        if self.current_page == ceil(len(self.data) / self.sep):
+            self.last_page_button.disabled = True
+            self.next_button.disabled = True
+        else:
+            self.last_page_button.disabled = False
+            self.next_button.disabled = False
+
+    @discord.ui.button(style=discord.ButtonStyle.primary, emoji="⏮️")
+    async def first_page_button(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ):
+        await interaction.response.defer()
+        self.current_page = 1
+        until_item = self.current_page * self.sep
+        await self.update_message(self.data[:until_item])
+
+    @discord.ui.button(style=discord.ButtonStyle.primary, emoji="◀️")
+    async def prev_button(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ):
+        await interaction.response.defer()
+        self.current_page -= 1
+        until_item = self.current_page * self.sep
+        from_item = until_item - self.sep
+        await self.update_message(self.data[from_item:until_item])
+
+    @discord.ui.button(style=discord.ButtonStyle.primary, emoji="▶️")
+    async def next_button(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ):
+        await interaction.response.defer()
+        self.current_page += 1
+        until_item = self.current_page * self.sep
+        from_item = until_item - self.sep
+        await self.update_message(self.data[from_item:until_item])
+
+    @discord.ui.button(style=discord.ButtonStyle.primary, emoji="⏭️")
+    async def last_page_button(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ):
+        await interaction.response.defer()
+        self.current_page = ceil(len(self.data) / self.sep)
+        until_item = self.current_page * self.sep
+        from_item = until_item - self.sep
+        await self.update_message(self.data[from_item:])
 
 
 class Utility(commands.Cog):
@@ -38,12 +113,16 @@ class Utility(commands.Cog):
                     if needle in txt:
                         await message.channel.send(respond_config["message"])
                         break
-        if message.author.bot and message.guild.id != 1099937674200105030:
+        else:
             bot_whitelist = await get_data("botwhitelist")
             channel_whitelist = await get_data("channelwhitelist")
-            if message.author.id not in bot_whitelist and message.channel.id not in channel_whitelist: 
+            if (
+                message.author.id not in bot_whitelist
+                and message.channel.id not in channel_whitelist
+            ):
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
+
     @commands.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
     @commands.is_owner()
     @option("user", discord.Member, description="User to mute")
@@ -163,20 +242,19 @@ class Utility(commands.Cog):
     @ar.command(description="Show autoresponse triggers", guild_ids=GUILD_IDS)
     async def show(self, ctx):
         message_list = await get_data("autorespond")
-        result = (
-            "This is the configuration. Use the index at the front to edit and delete"
-        )
-        code = "```"
+        data = []
         for index, item in enumerate(message_list):
-            code += f'{index}: {item["needle"]} -> {item["message"]} \n'
-        code += "```"
-        result += code
-        await update_data("autorespond", message_list)
-        await ctx.respond(result)
+            data.append((f'{index}: {item["needle"]}', f'{item["message"]}'))
+        pagination_view = PaginationView()
+        pagination_view.data = data
+        await ctx.respond(
+            "Use the index above each autoresponse to edit and delete"
+        )
+        await pagination_view.send(ctx)
 
     @commands.slash_command(
         name="ping", description="See if the bot is up", guild_ids=GUILD_IDS
-    )  # ping command
+    )
     async def ping(self, ctx):
         await ctx.respond(f"Your latency is {round(self.bot.latency * 1000)} ms")
 
