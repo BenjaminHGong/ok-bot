@@ -17,16 +17,15 @@ class Fun(commands.Cog):
     @commands.Cog.listener()
     async def on_connect(self):
         print("Fun commands loaded")
-
+    
     async def on_message(self, message):
         if not message.author.bot:
             grammar_list = await get_data("grammar")
             if message.author.id in grammar_list:
                 if await check_grammar(message.content) != False:
-                    response = f"<@{message.author.id}> " + await check_grammar(
-                        message.content
-                    )
+                    response = f"<@{message.author.id}> " + await check_grammar(message.content)
                     await message.channel.send(response)
+
 
     @commands.slash_command(
         description="Toggle annoying grammar suggestions", guild_id=GUILD_IDS
