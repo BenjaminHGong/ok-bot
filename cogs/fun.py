@@ -3,6 +3,9 @@ import random
 from discord import option
 from discord.ext import commands
 
+from grammar import check_grammar
+from jsonedit import get_data, update_data
+
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
 
@@ -14,6 +17,29 @@ class Fun(commands.Cog):
     @commands.Cog.listener()
     async def on_connect(self):
         print("Fun commands loaded")
+
+    async def on_message(self, message):
+        if not message.author.bot:
+            grammar_list = await get_data("grammar")
+            if message.author.id in grammar_list:
+                if await check_grammar(message.content) != False:
+                    response = f"<@{message.author.id}> " + await check_grammar(
+                        message.content
+                    )
+                    await message.channel.send(response)
+
+    @commands.slash_command(
+        description="Toggle annoying grammar suggestions", guild_id=GUILD_IDS
+    )
+    async def grammar(self, ctx):
+        grammarlist = await get_data("grammar")
+        if ctx.user.id in grammarlist:
+            grammarlist.remove(ctx.user.id)
+            await ctx.respond("You will no longer receive grammar suggestions. :(")
+        else:
+            grammarlist.append(ctx.user.id)
+            await ctx.respond("Time to fix your grammar! >:)")
+        await update_data("grammar", grammarlist)
 
     @commands.slash_command(
         name="8ball",
