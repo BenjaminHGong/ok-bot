@@ -116,10 +116,17 @@ class Utility(commands.Cog):
         else:
             bot_whitelist = await get_data("botwhitelist")
             channel_whitelist = await get_data("channelwhitelist")
+            if message.guild:
+                guild = message.guild
+                webhook_ids = []
+                for item in await guild.webhooks():
+                    webhook_ids.append(int(str(item)[12:31]))
             if (
                 message.author.id not in bot_whitelist
+                and message.author.id not in webhook_ids
                 and message.channel.id not in channel_whitelist
             ):
+                
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
 
@@ -247,9 +254,7 @@ class Utility(commands.Cog):
             data.append((f'{index}: {item["needle"]}', f'{item["message"]}'))
         pagination_view = PaginationView()
         pagination_view.data = data
-        await ctx.respond(
-            "Use the index above each autoresponse to edit and delete"
-        )
+        await ctx.respond("Use the index above each autoresponse to edit and delete")
         await pagination_view.send(ctx)
 
     @commands.slash_command(
