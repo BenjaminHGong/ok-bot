@@ -1,11 +1,12 @@
+import asyncio
+import datetime
 from math import ceil
 
 import discord
 from discord import option
 from discord.ext import commands
 
-from jsonedit import get_data, update_data
-from main import throw_error
+from utils import get_data, throw_error, update_data
 
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
@@ -126,9 +127,39 @@ class Utility(commands.Cog):
                 and message.author.id not in webhook_ids
                 and message.channel.id not in channel_whitelist
             ):
-                
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
+
+    @commands.slash_command(
+        description="Let Ok Bot remind you to do something!", guild_ids=GUILD_IDS
+    )
+    @option("weeks", int, description="Number of weeks")
+    @option("days", int, description="Number of days")
+    @option("hours", int, description="Number of hours")
+    @option("minutes", int, description="Number of minutes")
+    @option("seconds", int, description="Number of seconds")
+    @option("message", str, description="Reminder message")
+    async def reminder(
+        self, ctx, message, weeks=0, days=0, hours=0, minutes=0, seconds=0
+    ):
+        current_time = datetime.datetime.now()
+        reminder_time = current_time + datetime.timedelta(
+            days, seconds, 0, 0, minutes, hours, weeks
+        )
+        sleeptime = 1
+        if seconds == 0:
+            sleeptime *= 60
+            if minutes == 0:
+                sleeptime *= 60
+                if hours == 0:
+                    sleeptime *= 24
+                    if days == 0:
+                        sleeptime *= 7
+        await ctx.respond("Reminder added")
+        while current_time < reminder_time:
+            current_time = datetime.datetime.now()
+            await asyncio.sleep(sleeptime)
+        await ctx.send(f"<@{ctx.user.id}> {message}")
 
     @commands.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
     @commands.is_owner()

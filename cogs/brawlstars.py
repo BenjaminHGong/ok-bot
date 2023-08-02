@@ -7,7 +7,7 @@ from discord import option
 from discord.ext import commands
 from discord.utils import basic_autocomplete
 
-from jsonedit import get_data, get_data_once
+from utils import get_data, get_data_once
 
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 dc_r = {
@@ -139,11 +139,7 @@ class Brawlstars(commands.Cog):
         description="Chances of the item drop",
         autocomplete=basic_autocomplete(starrdropAutocomplete),
     )
-    @option(
-        "sf",
-        int,
-        description="Number of significant figures"
-    )
+    @option("sf", int, description="Number of significant figures")
     async def drops(self, ctx, rarity=None, item=None, sf=4):
         if rarity and item:
             try:
@@ -175,7 +171,7 @@ class Brawlstars(commands.Cog):
                     fraction = f"1/{k + 1}"
                 percentage = f"%.{sf - 2}f" % (float(chance) * 100)
                 await ctx.respond(
-                    f"The chances of getting {item_name} in {indefinite_article} {rarity} Starr Drop is {percentage}% or around {fraction}."
+                    f"The chances of getting {indefinite_article} {rarity} Starr Drop and then getting {item_name} is {percentage}% or around {fraction}."
                 )
             except KeyError:
                 ctx.respond("Rarity/item not found")
