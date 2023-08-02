@@ -4,7 +4,7 @@ from discord import option
 from discord.ext import commands
 
 from grammar import check_grammar
-from jsonedit import get_data, update_data
+from utils import get_data, update_data
 
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]

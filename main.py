@@ -11,6 +11,8 @@ from discord.ext import commands, tasks
 from discord.utils import basic_autocomplete
 from dotenv import load_dotenv
 
+from utils import throw_error
+
 dotenv_path = Path(r"C:\Users\singi\Desktop\.env")
 load_dotenv(dotenv_path=dotenv_path)
 nest_asyncio.apply()
@@ -18,12 +20,15 @@ GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-bot = discord.Bot(sync_commands=True, intents=discord.Intents.all())
+bot = commands.Bot(
+    command_prefix="!", sync_commands=True, intents=discord.Intents.all()
+)
 
 extensions_list = []
 for filename in os.listdir("cogs"):
     if filename.endswith(".py"):
         extensions_list.append(filename[:-3])
+
 
 async def load_extensions():
     for filename in extensions_list:
@@ -59,13 +64,6 @@ async def change_status():
     await bot.change_presence(activity=discord.Game(random.choice(status)))
 
 
-async def throw_error(ctx, error):
-    if isinstance(error, commands.NotOwner):
-        await ctx.respond("You don't have permission!", ephemeral=True)
-    else:
-        raise error
-
-
 @bot.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
 @commands.is_owner()
 async def restart(ctx):
@@ -78,11 +76,18 @@ async def restart(ctx):
 async def restart_error(ctx, error):
     await throw_error(ctx, error)
 
+
 cog = bot.create_group("cog", "Group of cog commands")
+
 
 @cog.command(description="Check if a cog is loaded", guild_ids=GUILD_IDS)
 @commands.is_owner()
-@option("extension", str, description="Extension to check (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
+@option(
+    "extension",
+    str,
+    description="Extension to check (ex. 'test' for test.py)",
+    autocomplete=basic_autocomplete(extensions_list),
+)
 async def check(ctx, extension):
     try:
         bot.load_extension(f"cogs.{extension}")
@@ -102,11 +107,14 @@ async def check_error(ctx, error):
     await throw_error(ctx, error)
 
 
-@cog.command(
-    description="Load a cog", guild_ids=GUILD_IDS
-)  # load command
+@cog.command(description="Load a cog", guild_ids=GUILD_IDS)  # load command
 @commands.is_owner()
-@option("extension", str, description="Extension to load (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
+@option(
+    "extension",
+    str,
+    description="Extension to load (ex. 'test' for test.py)",
+    autocomplete=basic_autocomplete(extensions_list),
+)
 async def load(ctx, extension):
     try:
         bot.load_extension(f"cogs.{extension}")
@@ -125,11 +133,14 @@ async def load_error(ctx, error):
     await throw_error(ctx, error)
 
 
-@cog.command(
-    description="Unload a cog", guild_ids=GUILD_IDS
-)  # unload command
+@cog.command(description="Unload a cog", guild_ids=GUILD_IDS)  # unload command
 @commands.is_owner()
-@option("extension", str, description="Extension to unload (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
+@option(
+    "extension",
+    str,
+    description="Extension to unload (ex. 'test' for test.py)",
+    autocomplete=basic_autocomplete(extensions_list),
+)
 async def unload(ctx, extension):
     try:
         bot.unload_extension(f"cogs.{extension}")
@@ -148,11 +159,14 @@ async def unload_error(ctx, error):
     await throw_error(ctx, error)
 
 
-@cog.command(
-    description="Reload a cog", guild_ids=GUILD_IDS
-)  # reload command
+@cog.command(description="Reload a cog", guild_ids=GUILD_IDS)  # reload command
 @commands.is_owner()
-@option("extension", str, description="Extension to reload (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
+@option(
+    "extension",
+    str,
+    description="Extension to reload (ex. 'test' for test.py)",
+    autocomplete=basic_autocomplete(extensions_list),
+)
 async def reload(ctx, extension):
     try:
         bot.reload_extension(f"cogs.{extension}")
