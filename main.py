@@ -8,6 +8,7 @@ import discord
 import nest_asyncio
 from discord import option
 from discord.ext import commands, tasks
+from discord.utils import basic_autocomplete
 from dotenv import load_dotenv
 
 dotenv_path = Path(r"C:\Users\singi\Desktop\.env")
@@ -19,11 +20,14 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 
 bot = discord.Bot(sync_commands=True, intents=discord.Intents.all())
 
+extensions_list = []
+for filename in os.listdir("cogs"):
+    if filename.endswith(".py"):
+        extensions_list.append(filename[:-3])
 
 async def load_extensions():
-    for filename in os.listdir("cogs"):
-        if filename.endswith(".py"):
-            bot.load_extension(f"cogs.{filename[:-3]}")
+    for filename in extensions_list:
+        bot.load_extension(f"cogs.{filename}")
 
 
 @bot.event
@@ -72,12 +76,13 @@ async def restart(ctx):
 
 @restart.error
 async def restart_error(ctx, error):
-    throw_error(ctx, error)
+    await throw_error(ctx, error)
 
+cog = bot.create_group("cog", "Group of cog commands")
 
-@bot.slash_command(description="Check if a cog is loaded", guild_ids=GUILD_IDS)
+@cog.command(description="Check if a cog is loaded", guild_ids=GUILD_IDS)
 @commands.is_owner()
-@option("extension", str, description="Extension to check (ex. 'test' for test.py)")
+@option("extension", str, description="Extension to check (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
 async def check(ctx, extension):
     try:
         bot.load_extension(f"cogs.{extension}")
@@ -94,20 +99,22 @@ async def check(ctx, extension):
 
 @check.error
 async def check_error(ctx, error):
-    throw_error(ctx, error)
+    await throw_error(ctx, error)
 
 
-@bot.slash_command(
-    description="Load Ok Bot commands", guild_ids=GUILD_IDS
+@cog.command(
+    description="Load a cog", guild_ids=GUILD_IDS
 )  # load command
 @commands.is_owner()
-@option("extension", str, description="Extension to load (ex. 'test' for test.py)")
+@option("extension", str, description="Extension to load (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
 async def load(ctx, extension):
     try:
         bot.load_extension(f"cogs.{extension}")
         desc = f"{extension} successfully loaded"
     except discord.ExtensionNotFound:
         desc = f"{extension} not found"
+    except discord.ExtensionAlreadyLoaded:
+        desc = f"{extension} already loaded"
 
     embed = discord.Embed(title="Load", description=desc, color=0xFF00C8)
     await ctx.respond(embed=embed, ephemeral=True)
@@ -115,14 +122,14 @@ async def load(ctx, extension):
 
 @load.error
 async def load_error(ctx, error):
-    throw_error(ctx, error)
+    await throw_error(ctx, error)
 
 
-@bot.slash_command(
-    description="Unload Ok Bot commands", guild_ids=GUILD_IDS
+@cog.command(
+    description="Unload a cog", guild_ids=GUILD_IDS
 )  # unload command
 @commands.is_owner()
-@option("extension", str, description="Extension to unload (ex. 'test' for test.py)")
+@option("extension", str, description="Extension to unload (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
 async def unload(ctx, extension):
     try:
         bot.unload_extension(f"cogs.{extension}")
@@ -138,14 +145,14 @@ async def unload(ctx, extension):
 
 @unload.error
 async def unload_error(ctx, error):
-    throw_error(ctx, error)
+    await throw_error(ctx, error)
 
 
-@bot.slash_command(
-    description="Reload Ok Bot commands", guild_ids=GUILD_IDS
+@cog.command(
+    description="Reload a cog", guild_ids=GUILD_IDS
 )  # reload command
 @commands.is_owner()
-@option("extension", str, description="Extension to reload (ex. 'test' for test.py)")
+@option("extension", str, description="Extension to reload (ex. 'test' for test.py)", autocomplete=basic_autocomplete(extensions_list))
 async def reload(ctx, extension):
     try:
         bot.reload_extension(f"cogs.{extension}")
@@ -159,7 +166,7 @@ async def reload(ctx, extension):
 
 @reload.error
 async def reload_error(ctx, error):
-    throw_error(ctx, error)
+    await throw_error(ctx, error)
 
 
 if __name__ == "__main__":
