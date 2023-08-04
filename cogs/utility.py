@@ -1,10 +1,10 @@
 import asyncio
-import datetime
+from datetime import datetime
 from math import ceil
 
 import discord
 from discord import option
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from utils import get_data, throw_error, update_data
 
@@ -13,15 +13,19 @@ owner_ids = [755525460267630612]
 
 
 class PaginationView(discord.ui.View):
-    current_page: int = 1
-    sep: int = 5
+    def __init__(self, data, title):
+        super().__init__()
+        self.data = data
+        self.title = title
+        self.current_page = 1
+        self.sep = 5
 
     async def send(self, ctx):
         self.message = await ctx.send(view=self)
         await self.update_message(self.data[: self.sep])
 
     def create_embed(self, data):
-        embed = discord.Embed(title="Autoresponse Triggers")
+        embed = discord.Embed(title=self.title)
         for key, value in data:
             embed.add_field(name=key, value=value, inline=False)
         return embed
@@ -88,6 +92,36 @@ class PaginationView(discord.ui.View):
 class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = commands.Bot = bot
+        self.check_reminders.start()
+
+    def cog_unload(self):
+        self.check_reminders.cancel()
+
+    @tasks.loop(seconds=1)
+    async def check_reminders(self):
+        all_reminders = await get_data("reminders")
+        current_time = datetime.now()
+        for user_id, reminders in all_reminders.items():
+            reminders_to_remove = list()
+            for reminder in reminders:
+                reminder_time = datetime.fromisoformat(reminder["time"])
+                if reminder_time <= current_time:
+                    destination_channel = self.bot.get_channel(reminder["channel"])
+                    if destination_channel:
+                        await destination_channel.send(
+                            f"{reminder['message']}||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| _ _ _ _ _ _ <@{user_id}>)"
+                        )
+                    else:
+                        # The destination channel is not found, so send the reminder as a DM
+                        user = self.bot.get_user(int(user_id))
+                        if user:
+                            await user.send(
+                                f"{reminder['message']}||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| _ _ _ _ _ _ <@{user_id}>)"
+                            )
+                    reminders_to_remove.append(reminder)
+            for item in reminders_to_remove:
+                reminders.remove(item)
+        await update_data("reminders", all_reminders)
 
     @commands.Cog.listener()
     async def on_connect(self):
@@ -130,36 +164,116 @@ class Utility(commands.Cog):
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
 
-    @commands.slash_command(
+    reminder = discord.SlashCommandGroup("reminder", "Group of autoresponse commands")
+
+    @reminder.command(description="Edit a specific reminder", guild_ids=GUILD_IDS)
+    @option("index", int, description="Index to edit")
+    @option("message", str, description="New message")
+    async def edit(self, ctx, index, message):
+        all_reminders = await get_data("reminders")
+        user_id = str(ctx.author.id)
+        if user_id in all_reminders:
+            reminders = all_reminders[user_id]
+            if 0 < index <= len(reminders):
+                reminders[index - 1]["message"] = message
+                await update_data("reminders", all_reminders)
+                await ctx.respond(f"Reminder at index {index} edited successfully.")
+            else:
+                await ctx.respond("Invalid reminder index.")
+        else:
+            await ctx.respond("You have no reminders.")
+
+    @reminder.command(
+        description="Delete a specific reminder by index", guild_ids=GUILD_IDS
+    )
+    @option("index", int, description="Index to delete")
+    async def delete(self, ctx, index):
+        all_reminders = await get_data("reminders")
+        user_id = str(ctx.user.id)
+
+        if user_id in all_reminders:
+            reminders = all_reminders[user_id]
+            if index < 1 or index > len(reminders):
+                await ctx.respond(
+                    "Invalid reminder index. Please provide a valid index."
+                )
+                return
+
+            # Remove the reminder at the given index.
+            deleted_reminder = reminders.pop(index - 1)
+
+            # Update the data in the storage.
+            await update_data("reminders", all_reminders)
+
+            # Send a response to confirm deletion.
+            deleted_time = datetime.fromisoformat(deleted_reminder["time"]).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            await ctx.respond(
+                f"Deleted reminder at index {index}: {deleted_time} - {discord.utils.escape_mentions(deleted_reminder['message'])}"
+            )
+        else:
+            await ctx.respond("You have no reminders.")
+
+    @reminder.command(
+        description="See reminders that are currently active", guild_ids=GUILD_IDS
+    )
+    async def show(self, ctx):
+        all_reminders = await get_data("reminders")
+        user_id = str(ctx.author.id)
+        if user_id in all_reminders:
+            reminders = all_reminders[user_id]
+            if reminders:
+                reminders_list = [
+                    (
+                        f"{index + 1}: {datetime.fromisoformat(reminder['time']).strftime('%Y-%m-%d %H:%M:%S')}",
+                        reminder["message"],
+                    )
+                    for index, reminder in enumerate(reminders)
+                ]
+                pagination_view = PaginationView(
+                    data=reminders_list, title="List of Reminders"
+                )
+                await ctx.respond("Use the index above each message to delete")
+                await pagination_view.send(ctx)
+            else:
+                await ctx.respond("You have no reminders.")
+        else:
+            await ctx.respond("You have no reminders.")
+
+    @reminder.command(
         description="Let Ok Bot remind you to do something!", guild_ids=GUILD_IDS
     )
-    @option("weeks", int, description="Number of weeks")
-    @option("days", int, description="Number of days")
-    @option("hours", int, description="Number of hours")
-    @option("minutes", int, description="Number of minutes")
-    @option("seconds", int, description="Number of seconds")
     @option("message", str, description="Reminder message")
-    async def reminder(
-        self, ctx, message, weeks=0, days=0, hours=0, minutes=0, seconds=0
-    ):
-        current_time = datetime.datetime.now()
-        reminder_time = current_time + datetime.timedelta(
-            days, seconds, 0, 0, minutes, hours, weeks
-        )
-        sleeptime = 1
-        if seconds == 0:
-            sleeptime *= 60
-            if minutes == 0:
-                sleeptime *= 60
-                if hours == 0:
-                    sleeptime *= 24
-                    if days == 0:
-                        sleeptime *= 7
-        await ctx.respond("Reminder added")
-        while current_time < reminder_time:
-            current_time = datetime.datetime.now()
-            await asyncio.sleep(sleeptime)
-        await ctx.send(f"<@{ctx.user.id}> {message}")
+    @option("date", str, description="Date to remind you (YYYY-MM-DD)")
+    @option("time", str, description="Time to remind you (HH:MM:SS)")
+    @option("channel", discord.TextChannel, description="Channel to send the reminder")
+    async def add(self, ctx, message, date=None, time=None, channel=None):
+        channel_id = channel.id if channel else ctx.channel.id
+        try:
+            if date != None and time != None:
+                time = date + "T" + time
+            elif date == None and time != None:
+                current_date = datetime.now().date()
+                time = current_date.strftime("%Y-%m-%d") + "T" + time
+            elif time == None and date != None:
+                time = date
+            else:
+                await ctx.respond("Please enter a valid date or time.")
+                return
+            reminders = await get_data("reminders")
+            reminder = {"message": message, "time": time, "channel": channel_id}
+            user_id = str(ctx.user.id)
+            if user_id not in reminders:
+                reminders[user_id] = []
+            reminders[user_id].append(reminder)
+            reminders[user_id] = sorted(
+                reminders[user_id], key=lambda x: datetime.fromisoformat(x["time"])
+            )
+            await update_data("reminders", reminders)
+            await ctx.respond("Reminder added")
+        except ValueError:
+            await ctx.respond("Please enter a valid date or time.")
 
     @commands.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
     @commands.is_owner()
@@ -273,7 +387,10 @@ class Utility(commands.Cog):
     @option("index", int, description="Autoresponse trigger to delete")
     async def delete(self, ctx, index):
         message_list = await get_data("autorespond")
-        message_list.pop(index)
+        if index < 1 or index > len(message_list):
+            await ctx.respond("Invalid reminder index. Please provide a valid index.")
+            return
+        message_list.pop(index - 1)
         await update_data("autorespond", message_list)
         await ctx.respond("Autoresponse deleted")
 
@@ -282,9 +399,8 @@ class Utility(commands.Cog):
         message_list = await get_data("autorespond")
         data = []
         for index, item in enumerate(message_list):
-            data.append((f'{index}: {item["needle"]}', f'{item["message"]}'))
-        pagination_view = PaginationView()
-        pagination_view.data = data
+            data.append((f'{index + 1}: {item["needle"]}', f'{item["message"]}'))
+        pagination_view = PaginationView(data=data, title="Autoresponse Triggers")
         await ctx.respond("Use the index above each autoresponse to edit and delete")
         await pagination_view.send(ctx)
 
