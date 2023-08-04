@@ -11,6 +11,7 @@ from discord.ext import commands, tasks
 from discord.utils import basic_autocomplete
 from dotenv import load_dotenv
 
+from cogs.utility import PaginationView
 from utils import throw_error
 
 dotenv_path = Path(r"C:\Users\singi\Desktop\.env")
@@ -33,6 +34,22 @@ for filename in os.listdir("cogs"):
 async def load_extensions():
     for filename in extensions_list:
         bot.load_extension(f"cogs.{filename}")
+
+
+@bot.slash_command(description="Show a list of all available commands", guild_ids=GUILD_IDS)
+async def help(ctx):
+    commands_data = []
+    for cog in bot.cogs.values():
+        for command in cog.get_commands():
+            commands_data.append(
+                (f"/{command.name}", command.description or "No description available")
+            )
+    commands_data = sorted(commands_data)
+    view = PaginationView(data=commands_data, title="Commands", color=0x57F287)
+    await ctx.respond(
+        f"Ok Bot is an all-purpose bot created by Benjamin Gong, with over {len(commands_data)} commands and counting."
+    )
+    await view.send(ctx)
 
 
 @bot.event

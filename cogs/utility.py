@@ -13,10 +13,11 @@ owner_ids = [755525460267630612]
 
 
 class PaginationView(discord.ui.View):
-    def __init__(self, data, title):
+    def __init__(self, data, title, color=None):
         super().__init__()
         self.data = data
         self.title = title
+        self.color = color
         self.current_page = 1
         self.sep = 5
 
@@ -25,7 +26,7 @@ class PaginationView(discord.ui.View):
         await self.update_message(self.data[: self.sep])
 
     def create_embed(self, data):
-        embed = discord.Embed(title=self.title)
+        embed = discord.Embed(title=self.title, color=self.color)
         for key, value in data:
             embed.add_field(name=key, value=value, inline=False)
         return embed
@@ -164,7 +165,7 @@ class Utility(commands.Cog):
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
 
-    reminder = discord.SlashCommandGroup("reminder", "Group of autoresponse commands")
+    reminder = discord.SlashCommandGroup("reminder", "Create, edit and delete reminders")
 
     @reminder.command(description="Edit a specific reminder", guild_ids=GUILD_IDS)
     @option("index", int, description="Index to edit")
@@ -232,7 +233,7 @@ class Utility(commands.Cog):
                     for index, reminder in enumerate(reminders)
                 ]
                 pagination_view = PaginationView(
-                    data=reminders_list, title="List of Reminders"
+                    data=reminders_list, title="List of Reminders", color=0x3498db
                 )
                 await ctx.respond("Use the index above each message to delete")
                 await pagination_view.send(ctx)
@@ -362,7 +363,7 @@ class Utility(commands.Cog):
                 emoji = "9️⃣"
             await msg.add_reaction(emoji)
 
-    ar = discord.SlashCommandGroup("ar", "Group of autoresponse commands")
+    ar = discord.SlashCommandGroup("ar", "Automatically respond to specific keywords")
 
     @ar.command(description="Create autorespond triggers", guild_ids=GUILD_IDS)
     @option("needle", str, description="Phrase to autorespond to")
@@ -400,7 +401,7 @@ class Utility(commands.Cog):
         data = []
         for index, item in enumerate(message_list):
             data.append((f'{index + 1}: {item["needle"]}', f'{item["message"]}'))
-        pagination_view = PaginationView(data=data, title="Autoresponse Triggers")
+        pagination_view = PaginationView(data=data, title="Autoresponse Triggers", color=0xffa500)
         await ctx.respond("Use the index above each autoresponse to edit and delete")
         await pagination_view.send(ctx)
 
