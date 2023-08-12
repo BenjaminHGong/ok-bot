@@ -60,7 +60,7 @@ You should now be able to see the bot being online and having a menu of slash co
 
 <img src="./assets/commands.png">
 
-##Commands
+## Commands
 * /8ball: Similar to a magic 8Ball but with it's own personality.
 * /ar: Automatically respond to specific keywords
 * /bag: Check what items you have
