@@ -11,14 +11,16 @@ To start using Ok Bot on your server, follow these instructions to add and confi
 *  [Python](https://www.python.org/downloads/)
 *  [FFMPEG](https://www.ffmpeg.org/)
 *  [Visual Studio Code](https://code.visualstudio.com/) (optional, makes running and editing code much easier)
+
+
+## Installing
+
 You can install the required dependencies using the following command:
 ```
 pip install -r requirements.txt
 ```
 
-## Installing
-
-Create an application in the [developer portal](https://discord.com/developers/applications/).
+If you haven't already, create an application in the [developer portal](https://discord.com/developers/applications/).
 
 ### Required permissions
 
@@ -90,7 +92,7 @@ You should now be able to see the bot being online and having a menu of slash co
 * /use: Use something in your bag
 * /vc: Group of voice channel commands
 * /withdraw: Withdraw coins from the bank
-* 
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
