@@ -1,4 +1,4 @@
-# ok* bot
+# ok-bot
 Ok Bot is a versatile and customizable Discord bot designed to enhance your server experience. With a wide range of commands catering to various needs, Ok Bot aims to make your Discord interactions more enjoyable and efficient.
 
 ## Getting Started
@@ -12,7 +12,7 @@ To start using Ok Bot on your server, follow these instructions to add and confi
 
 You can install the required dependencies using the following command:
 ```
-pip install * r requirements.txt
+pip install -r requirements.txt
 ```
 ## Installing
 Create an application in the [developer portal](https://discord.com/developers/applications/).
@@ -27,10 +27,10 @@ Activate the `Server Members Intent` and `Message Content Intent` by navigating 
 After cloning the project and installing all dependencies, you need to add your Discord API token in the `.env` file.
 ```bash
 # Clone the repository
-git clone https://github.com/BenjaminHGong/ok* bot.git
+git clone https://github.com/BenjaminHGong/ok-bot.git
 
 # Navigate to the project directory
-cd ok* bot
+cd ok-bot
 
 # Configure Discord Bot Token
 echo "DISCORD_TOKEN='INSERT_YOUR_TOKEN_HERE'" > .env
