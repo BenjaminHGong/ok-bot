@@ -1,4 +1,5 @@
 # ok-bot
+
 Ok Bot is a versatile and customizable Discord bot designed to enhance your server experience. With a wide range of commands catering to various needs, Ok Bot aims to make your Discord interactions more enjoyable and efficient.
 
 ## Getting Started
@@ -6,22 +7,25 @@ Ok Bot is a versatile and customizable Discord bot designed to enhance your serv
 To start using Ok Bot on your server, follow these instructions to add and configure the bot.
 
 ## Prerequisites
+
 *  [Python](https://www.python.org/downloads/)
 *  [FFMPEG](https://www.ffmpeg.org/)
 *  [Visual Studio Code](https://code.visualstudio.com/) (optional, makes running and editing code much easier)
-
 You can install the required dependencies using the following command:
 ```
 pip install -r requirements.txt
 ```
+
 ## Installing
+
 Create an application in the [developer portal](https://discord.com/developers/applications/).
 
-
 ### Required permissions
+
 Ensure that the `applications.commands` application scope is enabled for your bot. You can locate this setting under the `OAuth2` section within the [developer portal](https://discord.com/developers/applications/).
 
 Activate the `Server Members Intent` and `Message Content Intent` by navigating to the `Bot` tab in the [developer portal](https://discord.com/developers/applications/).
+
 ### Configuration
 
 After cloning the project and installing all dependencies, you need to add your Discord API token in the `.env` file.
@@ -38,7 +42,6 @@ echo "DISCORD_TOKEN='INSERT_YOUR_TOKEN_HERE'" > .env
 # Go into main.py and edit dotenv_path on line 17
 dotenv_path = Path(r"insert .env path here")
 ```
-
 
 ### Starting the application
 
@@ -57,10 +60,10 @@ VC commands loaded
 Bot Name#XXXX has connected to Discord!
 ```
 You should now be able to see the bot being online and having a menu of slash commands:
-
 <img src="./assets/commands.png">
 
 ## Commands
+
 * /8ball: Similar to a magic 8Ball but with it's own personality.
 * /ar: Automatically respond to specific keywords
 * /bag: Check what items you have
@@ -87,3 +90,10 @@ You should now be able to see the bot being online and having a menu of slash co
 * /use: Use something in your bag
 * /vc: Group of voice channel commands
 * /withdraw: Withdraw coins from the bank
+* 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+
+## Acknowledgments
+* WIP
