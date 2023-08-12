@@ -98,4 +98,6 @@ You should now be able to see the bot being online and having a menu of slash co
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
 ## Acknowledgments
-* WIP
+* [Code With Swastik](https://www.youtube.com/@CodeWithSwastik)
+* [Nayuki](https://www.nayuki.io/)
+* [Starr Drop rates images](https://www.reddit.com/r/Brawlstars/comments/14pxyx8/these_are_the_exact_drop_chances_of_starr_drops/)
