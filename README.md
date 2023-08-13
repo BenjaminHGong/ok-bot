@@ -95,7 +95,7 @@ You should now be able to see the bot being online and having a menu of slash co
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) file for details
 
 ## Acknowledgments
 * [Code With Swastik](https://www.youtube.com/@CodeWithSwastik)
