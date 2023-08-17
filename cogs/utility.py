@@ -165,9 +165,11 @@ class Utility(commands.Cog):
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
 
-    reminder = discord.SlashCommandGroup("reminder", "Create, edit and delete reminders")
+    reminder = discord.SlashCommandGroup(
+        "reminder", "Create, edit and delete reminders"
+    )
 
-    @reminder.command(description="Edit a specific reminder", guild_ids=GUILD_IDS)
+    @reminder.command(description="Edit a specific reminder's message", guild_ids=GUILD_IDS)
     @option("index", int, description="Index to edit")
     @option("message", str, description="New message")
     async def edit(self, ctx, index, message):
@@ -233,7 +235,7 @@ class Utility(commands.Cog):
                     for index, reminder in enumerate(reminders)
                 ]
                 pagination_view = PaginationView(
-                    data=reminders_list, title="List of Reminders", color=0x3498db
+                    data=reminders_list, title="List of Reminders", color=0x3498DB
                 )
                 await ctx.respond("Use the index above each message to delete")
                 await pagination_view.send(ctx)
@@ -272,7 +274,7 @@ class Utility(commands.Cog):
                 reminders[user_id], key=lambda x: datetime.fromisoformat(x["time"])
             )
             await update_data("reminders", reminders)
-            await ctx.respond("Reminder added")
+            await ctx.respond(f"Reminder added at {datetime.fromisoformat(time).strftime('%Y-%m-%d %H:%M:%S')}.")
         except ValueError:
             await ctx.respond("Please enter a valid date or time.")
 
@@ -371,16 +373,27 @@ class Utility(commands.Cog):
     async def create(self, ctx, needle, answer):
         message_list = await get_data("autorespond")
         respond_config = {"needle": needle, "message": answer}
-        message_list.append(respond_config)
-        await update_data("autorespond", message_list)
-        await ctx.respond("Autoresponse created")
+        try:
+            message_list[str(ctx.guild.id)].append(respond_config)
+            await update_data("autorespond", message_list)
+            await ctx.respond("Autoresponse created")
+        except KeyError:
+            message_list[str(ctx.guild.id)] = []
+            message_list[str(ctx.guild.id)].append(respond_config)
+            await update_data("autorespond", message_list)
+            await ctx.respond("Autoresponse created")
 
     @ar.command(description="Edit autoresponse triggers", guild_ids=GUILD_IDS)
     @option("index", int, description="Autoresponse trigger to edit")
     @option("answer", str, description="Message to change to")
     async def edit(self, ctx, index, answer):
         message_list = await get_data("autorespond")
-        message_list[index]["message"] = answer
+        message_list[str(ctx.guild.id)][index]["message"] = answer
+        if index < 1 or index > len(message_list[str(ctx.guild.id)]):
+            await ctx.respond(
+                "Invalid autoresponse index. Please provide a valid index."
+            )
+            return
         await update_data("autorespond", message_list)
         await ctx.respond("Autoresponse edited")
 
@@ -388,22 +401,33 @@ class Utility(commands.Cog):
     @option("index", int, description="Autoresponse trigger to delete")
     async def delete(self, ctx, index):
         message_list = await get_data("autorespond")
-        if index < 1 or index > len(message_list):
-            await ctx.respond("Invalid reminder index. Please provide a valid index.")
+        if index < 1 or index > len(message_list[str(ctx.guild.id)]):
+            await ctx.respond(
+                "Invalid autoresponse index. Please provide a valid index."
+            )
             return
-        message_list.pop(index - 1)
+        message_list[str(ctx.guild.id)].pop(index - 1)
         await update_data("autorespond", message_list)
         await ctx.respond("Autoresponse deleted")
 
     @ar.command(description="Show autoresponse triggers", guild_ids=GUILD_IDS)
     async def show(self, ctx):
-        message_list = await get_data("autorespond")
-        data = []
-        for index, item in enumerate(message_list):
-            data.append((f'{index + 1}: {item["needle"]}', f'{item["message"]}'))
-        pagination_view = PaginationView(data=data, title="Autoresponse Triggers", color=0xffa500)
-        await ctx.respond("Use the index above each autoresponse to edit and delete")
-        await pagination_view.send(ctx)
+        try:
+            message_list = await get_data("autorespond")
+            data = []
+            if message_list[str(ctx.guild.id)] == []:
+                raise KeyError
+            for index, item in enumerate(message_list[str(ctx.guild.id)]):
+                data.append((f'{index + 1}: {item["needle"]}', f'{item["message"]}'))
+            pagination_view = PaginationView(
+                data=data, title="Autoresponse Triggers", color=0xFFA500
+            )
+            await ctx.respond(
+                "Use the index above each autoresponse to edit and delete"
+            )
+            await pagination_view.send(ctx)
+        except KeyError:
+            await ctx.respond("You have no autoresponse triggers!")
 
     @commands.slash_command(
         name="ping", description="See if the bot is up", guild_ids=GUILD_IDS
