@@ -45,13 +45,13 @@ echo "DISCORD_TOKEN='INSERT_YOUR_TOKEN_HERE'" > .env
 dotenv_path = Path(r"insert .env path here")
 
 # Run the setup file
-python setup.py
+python bot/setup.py
 ```
 
 ### Starting the application
 
 ```bash
-python main.py
+python bot/main.py
 ```
 You can also run it in VS Code.
 If done correctly, the terminal should output
