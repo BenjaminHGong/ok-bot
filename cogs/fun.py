@@ -18,6 +18,7 @@ class Fun(commands.Cog):
     async def on_connect(self):
         print("Fun commands loaded")
     
+    @commands.Cog.listener()
     async def on_message(self, message):
         if not message.author.bot:
             grammar_list = await get_data("grammar")
