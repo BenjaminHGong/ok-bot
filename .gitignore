@@ -1,3 +1,12 @@
+# Custom files
+data/autorespond.json
+data/bank.json
+data/botwhitelist.json
+data/channelwhitelist.json
+data/grammar.json
+data/mute.json
+data/reminders.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
