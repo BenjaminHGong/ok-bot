@@ -127,6 +127,10 @@ class Utility(commands.Cog):
     @commands.Cog.listener()
     async def on_connect(self):
         print("Utility commands loaded")
+        
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        throw_error(ctx, error)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -138,7 +142,7 @@ class Utility(commands.Cog):
         if not message.author.bot:
             message_list = await get_data("autorespond")
             if len(message_list) > 0:
-                for respond_config in message_list:
+                for respond_config in message_list[str(message.guild.id)]:
                     needle = respond_config["needle"]
                     needle.lower()
                     if " " not in needle:
@@ -367,6 +371,7 @@ class Utility(commands.Cog):
 
     ar = discord.SlashCommandGroup("ar", "Automatically respond to specific keywords")
 
+    @commands.has_permissions(manage_messages=True)
     @ar.command(description="Create autorespond triggers", guild_ids=GUILD_IDS)
     @option("needle", str, description="Phrase to autorespond to")
     @option("answer", str, description="Message to respond")
@@ -382,7 +387,12 @@ class Utility(commands.Cog):
             message_list[str(ctx.guild.id)].append(respond_config)
             await update_data("autorespond", message_list)
             await ctx.respond("Autoresponse created")
+    @unmute.error
+    async def unmute_error(self, ctx, error):
+        await throw_error(ctx, error)
 
+
+    @commands.has_permissions(manage_messages=True)
     @ar.command(description="Edit autoresponse triggers", guild_ids=GUILD_IDS)
     @option("index", int, description="Autoresponse trigger to edit")
     @option("answer", str, description="Message to change to")
@@ -397,6 +407,7 @@ class Utility(commands.Cog):
         await update_data("autorespond", message_list)
         await ctx.respond("Autoresponse edited")
 
+    @commands.has_permissions(manage_messages=True)
     @ar.command(description="Delete autoresponse triggers", guild_ids=GUILD_IDS)
     @option("index", int, description="Autoresponse trigger to delete")
     async def delete(self, ctx, index):

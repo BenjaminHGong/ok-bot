@@ -22,6 +22,8 @@ async def update_data(name, list):
 
 async def throw_error(ctx, error):
     if isinstance(error, commands.NotOwner):
-        await ctx.respond("You don't have permission!", ephemeral=True)
+        await ctx.respond("This command is reserved for the bot owner.", ephemeral=True)
+    elif isinstance(error, commands.CheckFailure):
+        await ctx.respond("You don't have permission to use this command.", ephemeral=True)
     else:
         raise error
