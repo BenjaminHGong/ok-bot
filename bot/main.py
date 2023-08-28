@@ -39,17 +39,6 @@ async def main():
     await bot.run(TOKEN)
 
 
-async def throw_error(ctx, error):
-    if isinstance(error, commands.errors.NotOwner):
-        await ctx.respond("This command is reserved for the bot owner.", ephemeral=True)
-    elif isinstance(error, commands.errors.MissingPermissions):
-        await ctx.respond(
-            "You don't have permission to use this command.", ephemeral=True
-        )
-    else:
-        raise error
-
-
 @bot.event
 async def on_ready():
     change_status.start()
@@ -58,7 +47,14 @@ async def on_ready():
 
 @bot.event
 async def on_application_command_error(ctx, error):
-    await throw_error(ctx, error)
+    if isinstance(error, commands.errors.NotOwner):
+        await ctx.respond("This command is reserved for the bot owner.", ephemeral=True)
+    elif isinstance(error, commands.errors.MissingPermissions):
+        await ctx.respond(
+            "You don't have permission to use this command.", ephemeral=True
+        )
+    else:
+        raise error
 
 
 @tasks.loop(seconds=3600)  # status changing
@@ -75,7 +71,7 @@ async def change_status():
         "Minecraft",
         "Real Life",
         "Muck",
-        "Jackbox"
+        "Jackbox",
     ]
     await bot.change_presence(activity=discord.Game(random.choice(status)))
 
