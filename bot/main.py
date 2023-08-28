@@ -75,6 +75,7 @@ async def change_status():
         "Minecraft",
         "Real Life",
         "Muck",
+        "Jackbox"
     ]
     await bot.change_presence(activity=discord.Game(random.choice(status)))
 
