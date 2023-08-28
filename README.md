@@ -104,3 +104,4 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) f
 * [Code With Swastik](https://www.youtube.com/@CodeWithSwastik)
 * [Nayuki](https://www.nayuki.io/)
 * [Starr Drop rates images](https://www.reddit.com/r/Brawlstars/comments/14pxyx8/these_are_the_exact_drop_chances_of_starr_drops/)
+* [SpenLC](https://www.youtube.com/channel/UCsuS8BRN4y6_QoBvAqTtSSg)
