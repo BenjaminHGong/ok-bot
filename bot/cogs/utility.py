@@ -1,5 +1,6 @@
 import asyncio
-from datetime import datetime
+import arrow
+import dateparser
 from math import ceil
 
 import discord
@@ -100,11 +101,11 @@ class Utility(commands.Cog):
     @tasks.loop(seconds=1)
     async def check_reminders(self):
         all_reminders = await get_data("reminders")
-        current_time = datetime.now()
+        current_time = arrow.utcnow()
         for user_id, reminders in all_reminders.items():
             reminders_to_remove = list()
             for reminder in reminders:
-                reminder_time = datetime.fromisoformat(reminder["time"])
+                reminder_time = arrow.get(reminder["time"]).replace(tzinfo='US/Pacific')
                 if reminder_time <= current_time:
                     destination_channel = self.bot.get_channel(reminder["channel"])
                     if destination_channel:
@@ -112,7 +113,6 @@ class Utility(commands.Cog):
                             f"{reminder['message']}||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| _ _ _ _ _ _ <@{user_id}>)"
                         )
                     else:
-                        # The destination channel is not found, so send the reminder as a DM
                         user = self.bot.get_user(int(user_id))
                         if user:
                             await user.send(
@@ -164,9 +164,7 @@ class Utility(commands.Cog):
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
 
-    reminder = discord.SlashCommandGroup(
-        "reminder", "Create, edit and delete reminders"
-    )
+    reminder = discord.SlashCommandGroup("reminder", "Create, edit and delete reminders")
 
     @reminder.command(
         description="Edit a specific reminder's message", guild_ids=GUILD_IDS
@@ -191,16 +189,14 @@ class Utility(commands.Cog):
         description="Delete a specific reminder by index", guild_ids=GUILD_IDS
     )
     @option("index", int, description="Index to delete")
-    async def delete(self, ctx, index):
+    async def delete(self, ctx, index: int):
         all_reminders = await get_data("reminders")
-        user_id = str(ctx.user.id)
+        user_id = str(ctx.author.id)
 
         if user_id in all_reminders:
             reminders = all_reminders[user_id]
             if index < 1 or index > len(reminders):
-                await ctx.respond(
-                    "Invalid reminder index. Please provide a valid index."
-                )
+                await ctx.respond("Invalid reminder index. Please provide a valid index.")
                 return
 
             # Remove the reminder at the given index.
@@ -209,13 +205,17 @@ class Utility(commands.Cog):
             # Update the data in the storage.
             await update_data("reminders", all_reminders)
 
+            # Format the deleted reminder information.
+            deleted_time = arrow.get(deleted_reminder["time"]).format("MMMM DD, YYYY - h:mm A")
+            deleted_message = discord.utils.escape_mentions(deleted_reminder["message"])
+
             # Send a response to confirm deletion.
-            deleted_time = datetime.fromisoformat(deleted_reminder["time"]).strftime(
-                "%Y-%m-%d %H:%M:%S"
+            confirmation_message = (
+                f"Deleted reminder at index {index}:\n"
+                f"Time: {deleted_time}\n"
+                f"Message: {deleted_message}"
             )
-            await ctx.respond(
-                f"Deleted reminder at index {index}: {deleted_time} - {discord.utils.escape_mentions(deleted_reminder['message'])}"
-            )
+            await ctx.respond(confirmation_message)
         else:
             await ctx.respond("You have no reminders.")
 
@@ -225,12 +225,13 @@ class Utility(commands.Cog):
     async def show(self, ctx):
         all_reminders = await get_data("reminders")
         user_id = str(ctx.author.id)
+
         if user_id in all_reminders:
             reminders = all_reminders[user_id]
             if reminders:
                 reminders_list = [
                     (
-                        f"{index + 1}: {datetime.fromisoformat(reminder['time']).strftime('%Y-%m-%d %H:%M:%S')}",
+                        f"{index + 1}: {arrow.get(reminder['time']).format('MMMM DD, YYYY - h:mm A')}",
                         reminder["message"],
                     )
                     for index, reminder in enumerate(reminders)
@@ -248,38 +249,46 @@ class Utility(commands.Cog):
     @reminder.command(
         description="Let Ok Bot remind you to do something!", guild_ids=GUILD_IDS
     )
-    @option("message", str, description="Reminder message")
-    @option("date", str, description="Date to remind you (YYYY-MM-DD)")
-    @option("time", str, description="Time to remind you (HH:MM:SS)")
-    @option("channel", discord.TextChannel, description="Channel to send the reminder")
-    async def add(self, ctx, message, date=None, time=None, channel=None):
+    @option("message", str, description="Message to remind you")
+    @option("datetime_input", str, description="Date and time")
+    @option("channel", discord.TextChannel, description="Channel to send in")
+    async def add(self, ctx, message, channel=None):
         channel_id = channel.id if channel else ctx.channel.id
+        await ctx.respond("Please enter the date and time for the reminder (e.g., 'tomorrow at 3pm').")
+
+        def check(msg):
+            return msg.author == ctx.author and msg.channel == ctx.channel
         try:
-            if date != None and time != None:
-                time = date + "T" + time
-            elif date == None and time != None:
-                current_date = datetime.now().date()
-                time = current_date.strftime("%Y-%m-%d") + "T" + time
-            elif time == None and date != None:
-                time = date
-            else:
-                await ctx.respond("Please enter a valid date or time.")
+            msg = await self.bot.wait_for('message', check=check, timeout=60)  # Wait for user's response
+            datetime_input = msg.content
+            
+            parsed_datetime = dateparser.parse(datetime_input, settings={'TIMEZONE': 'US/Pacific'})
+            
+            if parsed_datetime is None:
+                await ctx.send("Please enter a valid date and time.")
                 return
+            
             reminders = await get_data("reminders")
-            reminder = {"message": message, "time": time, "channel": channel_id}
+            reminder = {"message": message, "time": parsed_datetime.isoformat(), "channel": channel_id}
             user_id = str(ctx.user.id)
+            
             if user_id not in reminders:
                 reminders[user_id] = []
+            
             reminders[user_id].append(reminder)
             reminders[user_id] = sorted(
-                reminders[user_id], key=lambda x: datetime.fromisoformat(x["time"])
+                reminders[user_id], key=lambda x: arrow.get(x["time"]).datetime
             )
+            
             await update_data("reminders", reminders)
-            await ctx.respond(
-                f"Reminder added at {datetime.fromisoformat(time).strftime('%Y-%m-%d %H:%M:%S')}."
-            )
+            formatted_date = parsed_datetime.strftime("%B %d, %Y")
+            formatted_time = parsed_datetime.strftime("%I:%M %p")
+            await ctx.send(f"Reminder added for {formatted_date} at {formatted_time}.")
+        except asyncio.TimeoutError:
+            await ctx.send("You took too long to provide a date and time. The reminder setup has been cancelled.")
         except ValueError:
-            await ctx.respond("Please enter a valid date or time.")
+            await ctx.send("Please enter a valid date and time.")
+
 
     @commands.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
     @commands.is_owner()
