@@ -83,8 +83,7 @@ class Misc(commands.Cog):
             await ctx.respond(message)
             number = await fibonacci(int(n))
             messages = number[0]
-            messages = await multi_msg(messages)
-            for item in messages:
+            async for item in multi_msg(messages):
                 await ctx.send(item)
 
 
