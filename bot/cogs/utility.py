@@ -5,8 +5,7 @@ from math import ceil
 import discord
 from discord import option
 from discord.ext import commands, tasks
-
-from utils import get_data, throw_error, update_data
+from utils import get_data, update_data
 
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
@@ -127,10 +126,6 @@ class Utility(commands.Cog):
     @commands.Cog.listener()
     async def on_connect(self):
         print("Utility commands loaded")
-        
-    @commands.Cog.listener()
-    async def on_command_error(self, ctx, error):
-        throw_error(ctx, error)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -173,7 +168,9 @@ class Utility(commands.Cog):
         "reminder", "Create, edit and delete reminders"
     )
 
-    @reminder.command(description="Edit a specific reminder's message", guild_ids=GUILD_IDS)
+    @reminder.command(
+        description="Edit a specific reminder's message", guild_ids=GUILD_IDS
+    )
     @option("index", int, description="Index to edit")
     @option("message", str, description="New message")
     async def edit(self, ctx, index, message):
@@ -278,7 +275,9 @@ class Utility(commands.Cog):
                 reminders[user_id], key=lambda x: datetime.fromisoformat(x["time"])
             )
             await update_data("reminders", reminders)
-            await ctx.respond(f"Reminder added at {datetime.fromisoformat(time).strftime('%Y-%m-%d %H:%M:%S')}.")
+            await ctx.respond(
+                f"Reminder added at {datetime.fromisoformat(time).strftime('%Y-%m-%d %H:%M:%S')}."
+            )
         except ValueError:
             await ctx.respond("Please enter a valid date or time.")
 
@@ -295,10 +294,6 @@ class Utility(commands.Cog):
 
             await ctx.respond("Muted", ephemeral=True)
 
-    @mute.error
-    async def mute_error(self, ctx, error):
-        await throw_error(ctx, error)
-
     @commands.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
     @commands.is_owner()
     @option("user", discord.Member, description="User to unmute")
@@ -310,10 +305,6 @@ class Utility(commands.Cog):
             await ctx.respond("Unmuted", ephemeral=True)
         else:
             await ctx.respond("This person is not muted", ephemeral=True)
-
-    @unmute.error
-    async def unmute_error(self, ctx, error):
-        await throw_error(ctx, error)
 
     @commands.slash_command(description="Make a custom poll", guild_ids=GUILD_IDS)
     @option("question", str, description="Question to ask")
@@ -387,10 +378,6 @@ class Utility(commands.Cog):
             message_list[str(ctx.guild.id)].append(respond_config)
             await update_data("autorespond", message_list)
             await ctx.respond("Autoresponse created")
-    @unmute.error
-    async def unmute_error(self, ctx, error):
-        await throw_error(ctx, error)
-
 
     @commands.has_permissions(manage_messages=True)
     @ar.command(description="Edit autoresponse triggers", guild_ids=GUILD_IDS)

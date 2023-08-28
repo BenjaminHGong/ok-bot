@@ -6,13 +6,11 @@ from pathlib import Path
 
 import discord
 import nest_asyncio
+from cogs.utility import PaginationView
 from discord import option
 from discord.ext import commands, tasks
 from discord.utils import basic_autocomplete
 from dotenv import load_dotenv
-
-from cogs.utility import PaginationView
-from utils import throw_error
 
 dotenv_path = Path(r"C:\Users\singi\Desktop\.env")
 load_dotenv(dotenv_path=dotenv_path)
@@ -36,20 +34,20 @@ async def load_extensions():
         bot.load_extension(f"cogs.{filename}")
 
 
-@bot.slash_command(description="Show a list of all available commands", guild_ids=GUILD_IDS)
-async def help(ctx):
-    commands_data = []
-    for cog in bot.cogs.values():
-        for command in cog.get_commands():
-            commands_data.append(
-                (f"/{command.name}", command.description or "No description available")
-            )
-    commands_data = sorted(commands_data)
-    view = PaginationView(data=commands_data, title="Commands", color=0x57F287)
-    await ctx.respond(
-        f"Ok Bot is an all-purpose bot created by Benjamin Gong, with over {len(commands_data)} commands and counting."
-    )
-    await view.send(ctx)
+async def main():
+    await load_extensions()
+    await bot.run(TOKEN)
+
+
+async def throw_error(ctx, error):
+    if isinstance(error, commands.errors.NotOwner):
+        await ctx.respond("This command is reserved for the bot owner.", ephemeral=True)
+    elif isinstance(error, commands.errors.MissingPermissions):
+        await ctx.respond(
+            "You don't have permission to use this command.", ephemeral=True
+        )
+    else:
+        raise error
 
 
 @bot.event
@@ -58,9 +56,9 @@ async def on_ready():
     print(f"{bot.user} has connected to Discord!")
 
 
-async def main():
-    await load_extensions()
-    await bot.run(TOKEN)
+@bot.event
+async def on_application_command_error(ctx, error):
+    await throw_error(ctx, error)
 
 
 @tasks.loop(seconds=3600)  # status changing
@@ -81,17 +79,30 @@ async def change_status():
     await bot.change_presence(activity=discord.Game(random.choice(status)))
 
 
+@bot.slash_command(
+    description="Show a list of all available commands", guild_ids=GUILD_IDS
+)
+async def help(ctx):
+    commands_data = []
+    for cog in bot.cogs.values():
+        for command in cog.get_commands():
+            commands_data.append(
+                (f"/{command.name}", command.description or "No description available")
+            )
+    commands_data = sorted(commands_data)
+    view = PaginationView(data=commands_data, title="Commands", color=0x57F287)
+    await ctx.respond(
+        f"Ok Bot is an all-purpose bot created by Benjamin Gong, with over {len(commands_data)} commands and counting."
+    )
+    await view.send(ctx)
+
+
 @bot.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
 @commands.is_owner()
 async def restart(ctx):
     await ctx.respond("Restarting...", ephemeral=True)
-    subprocess.Popen(["python", "main.py"])
+    subprocess.Popen(["python", "bot/main.py"])
     exit()
-
-
-@restart.error
-async def restart_error(ctx, error):
-    await throw_error(ctx, error)
 
 
 cog = bot.create_group("cog", "Group of cog commands")
@@ -119,11 +130,6 @@ async def check(ctx, extension):
     await ctx.respond(embed=embed, ephemeral=True)
 
 
-@check.error
-async def check_error(ctx, error):
-    await throw_error(ctx, error)
-
-
 @cog.command(description="Load a cog", guild_ids=GUILD_IDS)  # load command
 @commands.is_owner()
 @option(
@@ -143,11 +149,6 @@ async def load(ctx, extension):
 
     embed = discord.Embed(title="Load", description=desc, color=0xFF00C8)
     await ctx.respond(embed=embed, ephemeral=True)
-
-
-@load.error
-async def load_error(ctx, error):
-    await throw_error(ctx, error)
 
 
 @cog.command(description="Unload a cog", guild_ids=GUILD_IDS)  # unload command
@@ -171,11 +172,6 @@ async def unload(ctx, extension):
     await ctx.respond(embed=embed, ephemeral=True)
 
 
-@unload.error
-async def unload_error(ctx, error):
-    await throw_error(ctx, error)
-
-
 @cog.command(description="Reload a cog", guild_ids=GUILD_IDS)  # reload command
 @commands.is_owner()
 @option(
@@ -193,11 +189,6 @@ async def reload(ctx, extension):
 
     embed = discord.Embed(title="Reload", description=desc, color=0xFF00C8)
     await ctx.respond(embed=embed, ephemeral=True)
-
-
-@reload.error
-async def reload_error(ctx, error):
-    await throw_error(ctx, error)
 
 
 if __name__ == "__main__":
