@@ -246,7 +246,7 @@ class Brawlstars(commands.Cog):
     )
     async def map(self, ctx, map):
         try:
-            pic = open(f"maps\{map.lower()}.png", "rb")
+            pic = open(f"maps\{map.lower()}.jpeg", "rb")
             picture = discord.File(pic)
             await ctx.respond(file=picture)
         except FileNotFoundError:
