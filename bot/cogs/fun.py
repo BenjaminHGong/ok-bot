@@ -59,50 +59,76 @@ class Fun(commands.Cog):
     )
     @option("question", str, description="Question to ask")
     async def eightball(self, ctx, question):
-        answers = [
-            "That's a sus question",
-            "That's a VERY sus question",
-            "Don't be a monger, ask again",
-            "Ok bud, no",
-            "No that's bad",
-            "Amogus?",
-            "No way!",
+        positive = [
             "That's real",
-            "No, that's trash",
-            "lol, no",
-            "Bruh moment",
-            "Very questionable",
-            "Me when... maybe",
             "I enjoy",
-            "No that's cring",
             "OMG yes",
-            "WTF no",
             "Right now, yes",
-            "I agree",
-            "Bruh moment",
-            "No, and also L",
-            "EZ yes",
             "So true",
-            "LMAO! Good question, but idk",
             "True momento",
-            "Literally, no",
-            "Wow, just wow",
-            "No, mald harder",
-            "I could tell you, but I don't feel like it",
-            "Error: You do not have Ok Bot's respect",
-            "No you noob",
-            "BRUH what?!?!? I'm not answering that.",
-            "brb",
-            "Oh! I know the answer to this......actually nvm",
-            "Of course, duh",
+            "100% True",
+            "YES!!!!!",
+            "Real 👍",
+            "Yup, that's right",
+            "Yeah",
+            "Yes, no question about it lmao",
+            "I gotta agree lol",
             "I guess...",
             "Huh, I've never thought about that before. Now that you've brought it up, yes.",
+            "EZ yes",
+            "I agree",
+            "Of course, duh",
+        ]
+        negative = [
+            "Ok bud, no",
+            "No that's bad",
+            "No way!",
+            "No, that's trash",
+            "lol, no",
+            "Literally, no",
+            "No you noob",
+            "No, mald harder",
+            "No that's cring",
+            "WTF no",
+            "No, and also L",
+            "NO!!!!!!!",
+            "Non",
+            "Nah not true",
+            "What no",
+        ]
+        other = [
+            "That's a VERY sus question",
+            "Don't be a monger, ask again",
+            "Amogus?",
+            "What the sus",
+            "Make poop?",
+            "Stop making questions of floccinaucinihilipilification",
+            "Bruh moment",
+            "Very questionable question",
+            "Me when... maybe",
+            "LMAO! Good question, but idk",
+            "Wow, just wow",
+            "I could tell you, but I don't feel like it",
+            "Error: You do not have Ok Bot's respect",
+            "BRUH what?!?!? I'm not answering that.",
+            "brb",
+            "Uhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+            "💀",
+            "wdym i don't get what you're trying to ask",
+            "Get 100%% on your next test and I'll tell you",
+            "Oh! I know the answer to this......actually nvm",
             "6GCkFwidmtD%73C#7L&z27XeizgxVMQ6nY98h7TVFcYHr%^dAd#jE3^H&AP42gGxx3^e&NMxCm$SBG*6@TPP*RBGvbCYt*q^hQu2SnHnH9dNcb75uttfyUkg@XZQVZfg",
             "Stop asking me that RIGHT NOW!!!",
             "Oh, how delightful it would be to enlighten you with an answer to your inquiry! Alas, I fear the depths of my erudition may surpass the limits of your comprehension. But fear not, for the fault lies not with your humble curiosity, but rather with the boundless expanse of knowledge that resides within me.",
         ]
-
-        response = random.choice(answers)
+        i = random.randrange(4)
+        response = ""
+        if i == 0 or i == 1:
+            response = random.choice(positive)
+        elif i == 2:
+            response = random.choice(negative)
+        else:
+            response = random.choice(other)
         await ctx.respond(f"Question: {question}\nAnswer: {response}")
 
     @commands.slash_command(description="Generate random sussy words")  # rsw command
