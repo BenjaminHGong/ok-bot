@@ -101,7 +101,7 @@ class Utility(commands.Cog):
     @tasks.loop(seconds=1)
     async def check_reminders(self):
         all_reminders = await get_data("reminders")
-        current_time = arrow.utcnow()
+        current_time = arrow.utcnow().to('US/Pacific')
         for user_id, reminders in all_reminders.items():
             reminders_to_remove = list()
             for reminder in reminders:
