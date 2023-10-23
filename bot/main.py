@@ -2,8 +2,10 @@ import asyncio
 import os
 import random
 import subprocess
+import sys
 from pathlib import Path
 
+import arrow
 import discord
 import nest_asyncio
 from cogs.utility import PaginationView
@@ -18,7 +20,33 @@ nest_asyncio.apply()
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
 TOKEN = os.getenv("DISCORD_TOKEN")
+log_file = "output.log"
+log = open(log_file, "a")
 
+
+class CustomStream:
+    def __init__(self, log_file):
+        self.log_file = log_file
+        self.should_write_timestamp = True  # Flag to control timestamp writing
+
+    def write(self, text):
+        if self.should_write_timestamp:
+            timestamp = arrow.utcnow().to("US/Pacific").format("YYYY-MM-DD HH:mm:ss")
+            self.log_file.write(f"[{timestamp}] ")
+        self.log_file.write(text)
+        self.log_file.flush()
+        if "\n" in text:
+            self.should_write_timestamp = True  # Reset the flag after a newline
+        else:
+            self.should_write_timestamp = (
+                False  # Do not write timestamp for the next line
+            )
+
+    def flush(self):
+        sys.__stdout__.flush()
+
+
+sys.stdout = CustomStream(log)
 bot = commands.Bot(
     command_prefix="!", sync_commands=True, intents=discord.Intents.all()
 )
@@ -98,8 +126,8 @@ async def help(ctx):
 @commands.is_owner()
 async def restart(ctx):
     await ctx.respond("Restarting...", ephemeral=True)
-    subprocess.Popen(["python", "bot/main.py"])
-    exit()
+    subprocess.Popen(["pythonw", "bot/main.py"])
+    os._exit(0)
 
 
 cog = bot.create_group("cog", "Group of cog commands")
@@ -190,3 +218,4 @@ async def reload(ctx, extension):
 
 if __name__ == "__main__":
     asyncio.run(main())
+    log.close()
