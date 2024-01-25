@@ -10,7 +10,6 @@ To start using Ok Bot on your server, follow these instructions to add and confi
 
 *  [Python](https://www.python.org/downloads/)
 *  [FFMPEG](https://www.ffmpeg.org/)
-*  [Visual Studio Code](https://code.visualstudio.com/) (optional, makes running and editing code much easier)
 
 
 ## Installing
