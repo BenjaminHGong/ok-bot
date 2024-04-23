@@ -1,6 +1,7 @@
 import asyncio
 import arrow
 import dateparser
+import string
 from math import ceil
 
 import discord
@@ -85,8 +86,7 @@ class PaginationView(discord.ui.View):
     ):
         await interaction.response.defer()
         self.current_page = ceil(len(self.data) / self.sep)
-        until_item = self.current_page * self.sep
-        from_item = until_item - self.sep
+        from_item = (self.current_page - 1) * self.sep
         await self.update_message(self.data[from_item:])
 
 
@@ -101,11 +101,11 @@ class Utility(commands.Cog):
     @tasks.loop(seconds=1)
     async def check_reminders(self):
         all_reminders = await get_data("reminders")
-        current_time = arrow.utcnow().to('US/Pacific')
+        current_time = arrow.utcnow().to("US/Pacific")
         for user_id, reminders in all_reminders.items():
             reminders_to_remove = list()
             for reminder in reminders:
-                reminder_time = arrow.get(reminder["time"]).replace(tzinfo='US/Pacific')
+                reminder_time = arrow.get(reminder["time"]).replace(tzinfo="US/Pacific")
                 if reminder_time <= current_time:
                     destination_channel = self.bot.get_channel(reminder["channel"])
                     if destination_channel:
@@ -137,17 +137,30 @@ class Utility(commands.Cog):
         if not message.author.bot:
             message_list = await get_data("autorespond")
             if len(message_list) > 0:
+                txt = message.content.lower()
+                txt = txt.translate(str.maketrans(" ", " ", string.punctuation))
+
                 for respond_config in message_list[str(message.guild.id)]:
                     needle = respond_config["needle"]
                     needle.lower()
+                    temp = txt
                     if " " not in needle:
-                        message.content.lower()
-                        txt = message.content.split()
-                    else:
-                        txt = message.content.lower()
-                    if needle in txt:
+                        temp = txt.split()
+                    if needle in temp:
                         await message.channel.send(respond_config["message"])
                         break
+                else:
+                    if "good" in txt.split() or "bad" in txt.split():
+                        if message.author.id == 755525460267630612:
+                            await message.channel.send("I agree")
+                        else:
+                            await message.channel.send(
+                                "nah\n"
+                                + message.content.lower()
+                                .replace("good", "🌡")
+                                .replace("bad", "good")
+                                .replace("🌡", "bad")
+                            )
         else:
             bot_whitelist = await get_data("botwhitelist")
             channel_whitelist = await get_data("channelwhitelist")
@@ -164,7 +177,9 @@ class Utility(commands.Cog):
                 await message.delete()
                 await message.channel.send("<#1034679492586778674>")
 
-    reminder = discord.SlashCommandGroup("reminder", "Create, edit and delete reminders")
+    reminder = discord.SlashCommandGroup(
+        "reminder", "Create, edit and delete reminders"
+    )
 
     @reminder.command(
         description="Edit a specific reminder's message", guild_ids=GUILD_IDS
@@ -196,7 +211,9 @@ class Utility(commands.Cog):
         if user_id in all_reminders:
             reminders = all_reminders[user_id]
             if index < 1 or index > len(reminders):
-                await ctx.respond("Invalid reminder index. Please provide a valid index.")
+                await ctx.respond(
+                    "Invalid reminder index. Please provide a valid index."
+                )
                 return
 
             # Remove the reminder at the given index.
@@ -206,7 +223,9 @@ class Utility(commands.Cog):
             await update_data("reminders", all_reminders)
 
             # Format the deleted reminder information.
-            deleted_time = arrow.get(deleted_reminder["time"]).format("MMMM DD, YYYY - h:mm A")
+            deleted_time = arrow.get(deleted_reminder["time"]).format(
+                "MMMM DD, YYYY - h:mm A"
+            )
             deleted_message = discord.utils.escape_mentions(deleted_reminder["message"])
 
             # Send a response to confirm deletion.
@@ -254,41 +273,53 @@ class Utility(commands.Cog):
     @option("channel", discord.TextChannel, description="Channel to send in")
     async def add(self, ctx, message, channel=None):
         channel_id = channel.id if channel else ctx.channel.id
-        await ctx.respond("Please enter the date and time for the reminder (e.g., 'tomorrow at 3pm').")
+        await ctx.respond(
+            "Please enter the date and time for the reminder (e.g., 'tomorrow at 3pm')."
+        )
 
         def check(msg):
             return msg.author == ctx.author and msg.channel == ctx.channel
+
         try:
-            msg = await self.bot.wait_for('message', check=check, timeout=60)  # Wait for user's response
+            msg = await self.bot.wait_for(
+                "message", check=check, timeout=60
+            )  # Wait for user's response
             datetime_input = msg.content
-            
-            parsed_datetime = dateparser.parse(datetime_input, settings={'TIMEZONE': 'US/Pacific'})
-            
+
+            parsed_datetime = dateparser.parse(
+                datetime_input, settings={"TIMEZONE": "US/Pacific"}
+            )
+
             if parsed_datetime is None:
                 await ctx.send("Please enter a valid date and time.")
                 return
-            
+
             reminders = await get_data("reminders")
-            reminder = {"message": message, "time": parsed_datetime.isoformat(), "channel": channel_id}
+            reminder = {
+                "message": message,
+                "time": parsed_datetime.isoformat(),
+                "channel": channel_id,
+            }
             user_id = str(ctx.user.id)
-            
+
             if user_id not in reminders:
                 reminders[user_id] = []
-            
+
             reminders[user_id].append(reminder)
             reminders[user_id] = sorted(
                 reminders[user_id], key=lambda x: arrow.get(x["time"]).datetime
             )
-            
+
             await update_data("reminders", reminders)
             formatted_date = parsed_datetime.strftime("%B %d, %Y")
             formatted_time = parsed_datetime.strftime("%I:%M %p")
             await ctx.send(f"Reminder added for {formatted_date} at {formatted_time}.")
         except asyncio.TimeoutError:
-            await ctx.send("You took too long to provide a date and time. The reminder setup has been cancelled.")
+            await ctx.send(
+                "You took too long to provide a date and time. The reminder setup has been cancelled."
+            )
         except ValueError:
             await ctx.send("Please enter a valid date and time.")
-
 
     @commands.slash_command(description="Benjamin Gong only!", guild_ids=GUILD_IDS)
     @commands.is_owner()
@@ -378,13 +409,18 @@ class Utility(commands.Cog):
     async def create(self, ctx, needle, answer):
         message_list = await get_data("autorespond")
         respond_config = {"needle": needle, "message": answer}
+        guild_id = str(ctx.guild.id)
         try:
-            message_list[str(ctx.guild.id)].append(respond_config)
+            for trigger in message_list[guild_id]:
+                if trigger["needle"] == needle:
+                    await ctx.respond("This autoresponse already exists.")
+                    return
+            message_list[guild_id].append(respond_config)
             await update_data("autorespond", message_list)
             await ctx.respond("Autoresponse created")
         except KeyError:
-            message_list[str(ctx.guild.id)] = []
-            message_list[str(ctx.guild.id)].append(respond_config)
+            message_list[guild_id] = []
+            message_list[guild_id].append(respond_config)
             await update_data("autorespond", message_list)
             await ctx.respond("Autoresponse created")
 
@@ -429,9 +465,7 @@ class Utility(commands.Cog):
             pagination_view = PaginationView(
                 data=data, title="Autoresponse Triggers", color=0xFFA500
             )
-            await ctx.respond(
-                "Use the index above each autoresponse to edit and delete"
-            )
+            await ctx.respond("Use the index above each autoresponse to edit and delete")
             await pagination_view.send(ctx)
         except KeyError:
             await ctx.respond("You have no autoresponse triggers!")
