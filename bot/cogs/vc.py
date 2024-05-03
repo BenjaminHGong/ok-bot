@@ -2,11 +2,9 @@ import discord
 from discord import option
 from discord.ext import commands
 from discord.utils import basic_autocomplete
-
 from utils import get_data_once
 
-GUILD_IDS = [1024196422637195315, 1099937674200105030]
-owner_ids = [755525460267630612]
+GUILD_IDS = get_data_once("guilds")
 
 
 class VC(commands.Cog):
