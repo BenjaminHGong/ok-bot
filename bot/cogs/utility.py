@@ -134,7 +134,7 @@ class Utility(commands.Cog):
             await message.delete()
             await message.author.send("You are muted")
 
-        if not message.author.bot:
+        if not message.author.bot and not self.bot.user.mentioned_in(message):
             message_list = await get_data("autorespond")
             if len(message_list) > 0:
                 txt = message.content.lower()
@@ -161,7 +161,7 @@ class Utility(commands.Cog):
                                 .replace("bad", "good")
                                 .replace("🌡", "bad")
                             )
-        else:
+        elif message.author.bot:
             bot_whitelist = await get_data("botwhitelist")
             channel_whitelist = await get_data("channelwhitelist")
             if message.guild:
