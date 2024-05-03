@@ -1,12 +1,11 @@
 import sys
-
 from discord import option
 from discord.ext import commands
+from utils import get_data_once
 
 sys.set_int_max_str_digits(0)
 
-GUILD_IDS = [1024196422637195315, 1099937674200105030]
-owner_ids = [755525460267630612]
+GUILD_IDS = get_data_once("guilds")
 
 
 class Misc(commands.Cog):
