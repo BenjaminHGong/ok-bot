@@ -1,31 +1,32 @@
+import arrow
 import asyncio
+import discord
+import json
+import nest_asyncio
 import os
 import random
 import subprocess
 import sys
-from pathlib import Path
-
-import arrow
-import discord
-import nest_asyncio
 from cogs.utility import PaginationView
 from discord import option
 from discord.ext import commands, tasks
 from discord.utils import basic_autocomplete
 from dotenv import load_dotenv
+from pathlib import Path
+from utils import update_data
 
-import json
+
 def load_credentials(filename):
     with open(filename, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 load_dotenv(Path(".env"))
 TOKEN = os.environ.get("DISCORD_TOKEN")
 nest_asyncio.apply()
-GUILD_IDS = [1024196422637195315, 1099937674200105030]
-owner_ids = [755525460267630612]
 log_file = "output.log"
 log = open(log_file, "a")
+GUILD_IDS = []
 
 
 class CustomStream:
@@ -54,7 +55,7 @@ sys.stdout = CustomStream(log)
 bot = commands.Bot(
     command_prefix="!", sync_commands=True, intents=discord.Intents.all()
 )
-
+GUILD_IDS = []
 extensions_list = []
 for filename in os.listdir("bot\cogs"):
     if filename.endswith(".py"):
@@ -73,6 +74,9 @@ async def main():
 
 @bot.event
 async def on_ready():
+    global GUILD_IDS
+    GUILD_IDS = [guild.id for guild in bot.guilds]
+    await update_data("guilds", GUILD_IDS)
     change_status.start()
     print(f"{bot.user} has connected to Discord!")
 
