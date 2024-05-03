@@ -1,13 +1,12 @@
-from fractions import Fraction
-from math import floor
-
 import discord
 from discord import option
 from discord.ext import commands
 from discord.utils import basic_autocomplete
+from fractions import Fraction
+from math import floor
 from utils import get_data, get_data_once
 
-GUILD_IDS = [1024196422637195315, 1099937674200105030]
+GUILD_IDS = get_data_once("guilds")
 dc_r = {
     "Chance": Fraction(1, 2),
     "Power Points": Fraction(85, 215),
