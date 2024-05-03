@@ -1,15 +1,14 @@
+import discord
 import json
 import math
 import random
-from operator import itemgetter
-
-import discord
 from discord import option
 from discord.ext import commands
-
 from lists import mainshop
+from operator import itemgetter
+from utils import get_data_once
 
-GUILD_IDS = [1024196422637195315, 1099937674200105030]
+GUILD_IDS = get_data_once("guilds")
 BANK = "data/bank.json"
 ERROR_1 = "That object isn't there!"
 ERROR_2 = "Please specify a positive amount"
