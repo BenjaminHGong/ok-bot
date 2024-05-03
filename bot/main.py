@@ -14,12 +14,16 @@ from discord.ext import commands, tasks
 from discord.utils import basic_autocomplete
 from dotenv import load_dotenv
 
-dotenv_path = Path(r"C:\Users\singi\Desktop\.env")
-load_dotenv(dotenv_path=dotenv_path)
+import json
+def load_credentials(filename):
+    with open(filename, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+load_dotenv(Path(".env"))
+TOKEN = os.environ.get("DISCORD_TOKEN")
 nest_asyncio.apply()
 GUILD_IDS = [1024196422637195315, 1099937674200105030]
 owner_ids = [755525460267630612]
-TOKEN = os.getenv("DISCORD_TOKEN")
 log_file = "output.log"
 log = open(log_file, "a")
 
