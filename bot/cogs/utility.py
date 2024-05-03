@@ -1,16 +1,14 @@
 import asyncio
 import arrow
 import dateparser
-import string
-from math import ceil
-
 import discord
 from discord import option
 from discord.ext import commands, tasks
-from utils import get_data, update_data
+import string
+from math import ceil
+from utils import get_data_once, get_data, update_data
 
-GUILD_IDS = [1024196422637195315, 1099937674200105030]
-owner_ids = [755525460267630612]
+GUILD_IDS = get_data_once("guilds")
 
 
 class PaginationView(discord.ui.View):
@@ -465,7 +463,9 @@ class Utility(commands.Cog):
             pagination_view = PaginationView(
                 data=data, title="Autoresponse Triggers", color=0xFFA500
             )
-            await ctx.respond("Use the index above each autoresponse to edit and delete")
+            await ctx.respond(
+                "Use the index above each autoresponse to edit and delete"
+            )
             await pagination_view.send(ctx)
         except KeyError:
             await ctx.respond("You have no autoresponse triggers!")
