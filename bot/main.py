@@ -21,7 +21,7 @@ def load_credentials(filename):
         return json.load(f)
 
 
-load_dotenv(Path(".env"))
+load_dotenv(Path(r".env"))
 TOKEN = os.environ.get("DISCORD_TOKEN")
 nest_asyncio.apply()
 log_file = "output.log"
