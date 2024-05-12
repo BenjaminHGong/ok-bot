@@ -40,8 +40,8 @@ cd ok-bot
 # Configure Discord Bot Token
 echo "DISCORD_TOKEN='INSERT_YOUR_TOKEN_HERE'" > .env
 
-# Go into main.py and edit dotenv_path on line 17
-dotenv_path = Path(r"insert .env path here")
+# Go into main.py and edit dotenv_path on line 24
+load_dotenv(Path(r"insert .env path here"))
 
 # Run the setup file
 python bot/setup.py
