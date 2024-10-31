@@ -163,6 +163,7 @@ cython_debug/
 data/autorespond.json
 data/bank.json
 data/botwhitelist.json
+data/chathistory.json
 data/channelwhitelist.json
 data/grammar.json
 data/guilds.json
