@@ -57,7 +57,7 @@ bot = commands.Bot(
 )
 GUILD_IDS = []
 extensions_list = []
-for filename in os.listdir("bot\cogs"):
+for filename in os.listdir("bot/cogs"):
     if filename.endswith(".py"):
         extensions_list.append(filename[:-3])
 
