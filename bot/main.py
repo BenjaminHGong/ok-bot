@@ -16,6 +16,30 @@ from pathlib import Path
 from utils import update_data
 
 
+def check_single_instance(lockfile="bot.lock"):
+    lock_file = open(lockfile, "w")
+
+    if os.name == "nt":
+        import msvcrt
+        try:
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            print("Another instance is already running.")
+            sys.exit()
+    else:
+        import fcntl
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print("Another instance is already running.")
+            sys.exit()
+
+    return lock_file
+
+
+lock = check_single_instance()
+
+
 def load_credentials(filename):
     with open(filename, "r", encoding="utf-8") as f:
         return json.load(f)
