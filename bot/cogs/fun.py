@@ -41,12 +41,9 @@ def trim_history_jsonpickle(history, max_bytes=MAX_HISTORY_BYTES):
     return system_msgs + trimmed
     
 async def keep_typing(channel):
-        try:
-            while True:
-                await channel.trigger_typing()
-                await asyncio.sleep(4)  # re-trigger every 4 seconds
-        except asyncio.CancelledError:
-            pass
+    while True:
+        await channel.trigger_typing()
+        await asyncio.sleep(4)  # re-trigger every 4 seconds
 
 # ── Configure your Gemini client ───────────────────────────────────────────────
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -59,6 +56,7 @@ GUILD_IDS = get_data_once("guilds")
 class Fun(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.generation_tasks = {}  # channel_id -> asyncio.Task
     
     system_instruction = (
         "You are Ok Bot, a Discord bot chatting with users in a Discord server.\n"
@@ -87,104 +85,121 @@ class Fun(commands.Cog):
             await self.bot.process_commands(message)
             return
 
-        typing_task = asyncio.create_task(keep_typing(message.channel))
+        async def generate_response():
+            typing_task = asyncio.create_task(keep_typing(message.channel))
+            try:
+                cleaned = message.content.replace(f"<@{self.bot.user.id}>", "").strip()
+                for m in message.mentions:
+                    cleaned = cleaned.replace(m.mention, m.display_name)
+
+                # multimodal / text chat with history
+                import time
+                chat_history = await get_data("chathistory")
+                chan_id = str(message.channel.id)
+                now = time.time()
+                # If no history or history older than 24 hours, reset
+                if chan_id not in chat_history:
+                    chat_history[chan_id] = jsonpickle.encode({"history": [], "timestamp": now}, True)
+                hist_obj = jsonpickle.decode(chat_history[chan_id])
+                if "timestamp" not in hist_obj or now - hist_obj["timestamp"] > 86400:
+                    hist_obj = {"history": [self.system_instruction_content], "timestamp": now}
+                hist = hist_obj["history"]
+                hist = trim_history_jsonpickle(hist)
+
+                chat = client.chats.create(model=CHAT_MODEL, history=hist, config=GenerateContentConfig(
+                    response_modalities=["TEXT", "IMAGE"], 
+                    safety_settings=[
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, 
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, 
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, 
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, 
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, 
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE
+                        )
+                    ]
+                ))
+
+                parts: list[Content | str] = []
+                if message.attachments:
+                    att = message.attachments[0]
+                    if att.content_type and att.content_type.startswith("image/"):
+                        img_bytes = await att.read()
+                        parts.append(Part.from_bytes(data=img_bytes, mime_type=att.content_type))
+
+                if cleaned:
+                    parts.append(f"{message.author.display_name}: {cleaned}")
+
+                resp = await asyncio.to_thread(chat.send_message, parts)
+
+                # check for empty response
+                if not resp.candidates:
+                    await message.channel.send("Ok Bot didn't respond. Try again.")
+                    return
+
+                image_sent = False
+                text_buffer = []
+                img_bytes = None
+
+                for part in resp.candidates[0].content.parts:
+                    if hasattr(part, "inline_data") and part.inline_data is not None:
+                        mime_type = part.inline_data.mime_type
+                        if mime_type and mime_type.startswith("image/"):
+                            img_bytes = part.inline_data.data
+                    elif hasattr(part, "text") and part.text:
+                        text_buffer.append(part.text)
+
+                if text_buffer:
+                    for line in "\n".join(text_buffer).split("\n"):
+                        if line.strip():
+                            await message.channel.send(line)
+
+                if img_bytes:
+                    image_sent = True
+                    await message.channel.send(file=discord.File(BytesIO(img_bytes), filename="image.png"))
+                if not image_sent and any("generate" in line.lower() and "image" in line.lower() for line in text_buffer):
+                    await message.channel.send("_Ok Bot didn't generate an image. Try again? 🤔_")
+
+                # Save updated, trimmed history (including all system & model/user turns)
+                new_hist = chat.get_history()
+                chat_history[chan_id] = jsonpickle.encode({"history": new_hist, "timestamp": now}, True)
+                await update_data("chathistory", chat_history)
+            except genai.errors.ClientError:
+                await message.channel.send("Ok Bot has reached its quota limit. Please try again later.")
+            finally:
+                typing_task.cancel()
+            await self.bot.process_commands(message)
+
+        chan_id = str(message.channel.id)
+        # Cancel any previous generation in this channel
+        prev_task = self.generation_tasks.get(chan_id)
+        if prev_task and not prev_task.done():
+            prev_task.cancel()
+        # Start new generation task
+        task = asyncio.create_task(generate_response())
+        self.generation_tasks[chan_id] = task
         
-        try:
-            cleaned = message.content.replace(f"<@{self.bot.user.id}>", "").strip()
-            for m in message.mentions:
-                cleaned = cleaned.replace(m.mention, m.display_name)
-
-            # multimodal / text chat with history
-            chat_history = await get_data("chathistory")
-            chan_id = str(message.channel.id)
-            if chan_id not in chat_history:
-                chat_history[chan_id] = jsonpickle.encode([], True)
-            hist = jsonpickle.decode(chat_history[chan_id])
-
-            if not hist:
-                hist.append(self.system_instruction_content)
-                
-            hist = trim_history_jsonpickle(hist)
-            
-            chat = client.chats.create(model=CHAT_MODEL, history=hist, config=GenerateContentConfig(
-                response_modalities=["TEXT", "IMAGE"], 
-                safety_settings=[
-                    types.SafetySetting(
-                        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, 
-                        threshold=types.HarmBlockThreshold.BLOCK_NONE
-                    ),
-                    types.SafetySetting(
-                        category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, 
-                        threshold=types.HarmBlockThreshold.BLOCK_NONE
-                    ),
-                    types.SafetySetting(
-                        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, 
-                        threshold=types.HarmBlockThreshold.BLOCK_NONE
-                    ),
-                    types.SafetySetting(
-                        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, 
-                        threshold=types.HarmBlockThreshold.BLOCK_NONE
-                    ),
-                    types.SafetySetting(
-                        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, 
-                        threshold=types.HarmBlockThreshold.BLOCK_NONE
-                    )
-                ]
-            ))
-
-            parts: list[Content | str] = []
-            if message.attachments:
-                att = message.attachments[0]
-                if att.content_type and att.content_type.startswith("image/"):
-                    img_bytes = await att.read()
-                    parts.append(Part.from_bytes(data=img_bytes, mime_type=att.content_type))
-
-            if cleaned:
-                parts.append(f"{message.author.display_name}: {cleaned}")
-
-            resp = await asyncio.to_thread(chat.send_message, parts)
-
-            # check for empty response
-            if not resp.candidates:
-                await message.channel.send("Ok Bot didn't respond. Try again.")
-                return
-
-            image_sent = False
-            text_buffer = []
-            img_bytes = None
-            
-
-            for part in resp.candidates[0].content.parts:
-                if hasattr(part, "inline_data") and part.inline_data is not None:
-                    mime_type = part.inline_data.mime_type
-                    if mime_type and mime_type.startswith("image/"):
-                        img_bytes = part.inline_data.data
-                        
-                elif hasattr(part, "text") and part.text:
-                    text_buffer.append(part.text)
-                    
-            if text_buffer:
-                for line in "\n".join(text_buffer).split("\n"):
-                    if line.strip():
-                        await message.channel.send(line)
-            
-            if img_bytes:
-                image_sent = True
-                await message.channel.send(file=discord.File(BytesIO(img_bytes), filename="image.png"))
-            if not image_sent and any("generate" in line.lower() and "image" in line.lower() for line in text_buffer):
-                await message.channel.send("_Ok Bot didn't generate an image. Try again? 🤔_")
-
-            # Save updated, trimmed history (including all system & model/user turns)
-            new_hist = chat.get_history()
-            # Optionally, re-trim new_hist here before saving if you expect growth
-            chat_history[chan_id] = jsonpickle.encode(new_hist, True)
-            await update_data("chathistory", chat_history)
-        except genai.errors.ClientError:
-            await message.channel.send("Ok Bot has reached its quota limit. Please try again later.")
-            
-        finally:
-            typing_task.cancel()
-        await self.bot.process_commands(message)
+    @commands.slash_command(description="Stop Ok Bot's response in this channel",guild_ids=GUILD_IDS)
+    async def stop(self, ctx):
+        chan_id = str(ctx.channel.id)
+        task = self.generation_tasks.get(chan_id)
+        if task and not task.done():
+            task.cancel()
+            await ctx.respond("Ok Bot's response has been stopped.")
+        else:
+            await ctx.respond("No active response to stop in this channel.")
 
     @commands.slash_command(description="Clear chat history with Ok Bot")
     async def clear(self, ctx):
