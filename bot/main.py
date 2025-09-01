@@ -86,13 +86,13 @@ for filename in os.listdir("bot/cogs"):
         extensions_list.append(filename[:-3])
 
 
-async def load_extensions():
+def load_extensions():
     for filename in extensions_list:
         bot.load_extension(f"cogs.{filename}")
 
 
 async def main():
-    await load_extensions()
+    load_extensions()
     await bot.run(TOKEN)
 
 
@@ -158,7 +158,7 @@ async def help(ctx):
 @commands.is_owner()
 async def restart(ctx):
     await ctx.respond("Restarting...", ephemeral=True)
-    subprocess.Popen(["pythonw", "bot/main.py"])
+    await asyncio.create_subprocess_exec("pythonw", "bot/main.py")
     os._exit(0)
 
 
