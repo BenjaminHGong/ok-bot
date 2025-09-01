@@ -9,6 +9,7 @@ from math import ceil
 from utils import get_data_once, get_data, update_data
 
 GUILD_IDS = get_data_once("guilds")
+NO_REMINDERS_MSG = "You have no reminders."
 
 
 class PaginationView(discord.ui.View):
@@ -98,12 +99,13 @@ class Utility(commands.Cog):
 
     @tasks.loop(seconds=1)
     async def check_reminders(self):
+        tzinfo = "US/Pacific"
         all_reminders = await get_data("reminders")
-        current_time = arrow.utcnow().to("US/Pacific")
+        current_time = arrow.utcnow().to(tzinfo)
         for user_id, reminders in all_reminders.items():
-            reminders_to_remove = list()
+            reminders_to_remove = []
             for reminder in reminders:
-                reminder_time = arrow.get(reminder["time"]).replace(tzinfo="US/Pacific")
+                reminder_time = arrow.get(reminder["time"]).replace(tzinfo=tzinfo)
                 if reminder_time <= current_time:
                     destination_channel = self.bot.get_channel(reminder["channel"])
                     if destination_channel:
@@ -180,7 +182,7 @@ class Utility(commands.Cog):
             else:
                 await ctx.respond("Invalid reminder index.")
         else:
-            await ctx.respond("You have no reminders.")
+            await ctx.respond(NO_REMINDERS_MSG)
 
     @reminder.command(
         description="Delete a specific reminder by index", guild_ids=GUILD_IDS
@@ -218,7 +220,7 @@ class Utility(commands.Cog):
             )
             await ctx.respond(confirmation_message)
         else:
-            await ctx.respond("You have no reminders.")
+            await ctx.respond(NO_REMINDERS_MSG)
 
     @reminder.command(
         description="See reminders that are currently active", guild_ids=GUILD_IDS
@@ -243,9 +245,9 @@ class Utility(commands.Cog):
                 await ctx.respond("Use the index above each message to delete")
                 await pagination_view.send(ctx)
             else:
-                await ctx.respond("You have no reminders.")
+                await ctx.respond(NO_REMINDERS_MSG)
         else:
-            await ctx.respond("You have no reminders.")
+            await ctx.respond(NO_REMINDERS_MSG)
 
     @reminder.command(
         description="Let Ok Bot remind you to do something!", guild_ids=GUILD_IDS
