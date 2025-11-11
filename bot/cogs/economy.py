@@ -147,6 +147,37 @@ class Economy(commands.Cog):
             await ctx.respond(embed=dep_embed)
 
     @commands.slash_command(
+        description="Transfer coins to another user"
+    )
+    @option("member", discord.Member, description="User to transfer coins to")
+    @option("amount", int, description="Amount of coins to transfer", min_value=1)
+    async def transfer(self, ctx, member: discord.Member, amount: int):
+        sender = ctx.user
+        
+        if sender == member:
+            await ctx.respond("You can't transfer coins to yourself!")
+            return
+            
+        await self.open_account(sender)
+        await self.open_account(member)
+        
+        sender_bal = await self.update_bank(sender)
+        
+        if amount > sender_bal[0]:
+            await ctx.respond("You don't have enough coins in your wallet!")
+            return
+            
+        await self.update_bank(sender, -1 * amount, "wallet")
+        await self.update_bank(member, amount, "wallet")
+        
+        transfer_embed = discord.Embed(
+            title="Transfer Successful! 💸",
+            description=f"You sent {amount} coins to {member.display_name}",
+            color=discord.Color.green()
+        )
+        await ctx.respond(embed=transfer_embed)
+
+    @commands.slash_command(
         description="Withdraw coins from the bank"
     )  # withdraw command
     @option("amount", int, description="Amount of coins to withdraw")
@@ -170,6 +201,8 @@ class Economy(commands.Cog):
             with open(BANK, "r") as f:
                 json.load(f)
 
+    
+    
     async def open_account(self, user):  # open_account function
         users = await self.get_bank_data()
 

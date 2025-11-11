@@ -23,6 +23,8 @@ class Misc(commands.Cog):
         "n",
         int,
         description="The nth term of the fibonacci sequence (0 <= n <= 1000000)",
+        min_value = 0,
+        max_value = 1000000
     )
     async def fibonacci(self, ctx, n):
         async def multiply(x, y):
@@ -63,26 +65,21 @@ class Misc(commands.Cog):
                 yield int(seq[:2000])
                 seq = seq[2000:]
 
-        if n < 0:
-            ctx.respond("Please enter a positive integer.")
-        elif n > 1000000:
-            ctx.respond("Bruh way too big")
+        message = "Working on it... The "
+        if n % 10 == 1 and n != 11:
+            message += f"{n}st "
+        elif n % 10 == 2 and n != 12:
+            message += f"{n}nd "
+        elif n % 10 == 3 and n != 13:
+            message += f"{n}rd "
         else:
-            message = "Working on it... The "
-            if n % 10 == 1 and n != 11:
-                message += f"{n}st "
-            elif n % 10 == 2 and n != 12:
-                message += f"{n}nd "
-            elif n % 10 == 3 and n != 13:
-                message += f"{n}rd "
-            else:
-                message += f"{n}th "
-            message += "number in the fibonacci sequence is:"
-            await ctx.respond(message)
-            number = await fibonacci(int(n))
-            messages = number[0]
-            async for item in multi_msg(messages):
-                await ctx.send(item)
+            message += f"{n}th "
+        message += "number in the fibonacci sequence is:"
+        await ctx.respond(message)
+        number = await fibonacci(int(n))
+        messages = number[0]
+        async for item in multi_msg(messages):
+            await ctx.send(item)
 
 
 def setup(bot):
