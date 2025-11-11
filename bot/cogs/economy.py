@@ -126,7 +126,7 @@ class Economy(commands.Cog):
     @commands.slash_command(
         description="Deposit coins into the bank"
     )  # deposit command
-    @option("amount", int, description="Amount of coins to deposit")
+    @option("amount", int, description="Amount of coins to deposit", min_value=0)
     async def deposit(self, ctx, amount):
         user = ctx.user
         await self.open_account(user)
