@@ -1,6 +1,5 @@
 import os
 import jsonpickle
-from io import BytesIO
 
 import discord
 from discord.ext import commands
