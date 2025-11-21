@@ -5,7 +5,6 @@ import json
 import nest_asyncio
 import os
 import random
-import subprocess
 import sys
 from cogs.utility import PaginationView
 from discord import option
