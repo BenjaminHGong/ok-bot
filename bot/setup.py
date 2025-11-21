@@ -6,6 +6,7 @@ data = {
     "bank": {},
     "botwhitelist": [],
     "channelwhitelist": [],
+    "chathistory": {},
     "grammar": [],
     "guilds": [],
     "mute": [],
