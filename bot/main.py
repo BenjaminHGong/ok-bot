@@ -12,7 +12,7 @@ from discord.ext import commands, tasks
 from discord.utils import basic_autocomplete
 from dotenv import load_dotenv
 from pathlib import Path
-from utils import update_data
+from utils import update_data, get_data_once
 
 
 def check_single_instance(lockfile="bot.lock"):
@@ -49,7 +49,10 @@ TOKEN = os.environ.get("DISCORD_TOKEN")
 nest_asyncio.apply()
 log_file = "output.log"
 log = open(log_file, "a")
-GUILD_IDS = []
+try:
+    GUILD_IDS = get_data_once("guilds")
+except Exception:
+    GUILD_IDS = []
 
 
 class CustomStream:
@@ -78,7 +81,7 @@ sys.stdout = CustomStream(log)
 bot = commands.Bot(
     command_prefix="!", sync_commands=True, intents=discord.Intents.all()
 )
-GUILD_IDS = []
+
 extensions_list = []
 for filename in os.listdir("bot/cogs"):
     if filename.endswith(".py"):
@@ -101,6 +104,7 @@ async def on_ready():
     GUILD_IDS = [guild.id for guild in bot.guilds]
     await update_data("guilds", GUILD_IDS)
     change_status.start()
+    
     print(f"{bot.user} has connected to Discord!")
 
 
@@ -127,10 +131,13 @@ async def change_status():
         "Gomoku",
         "Chess",
         "Bomb Party",
+        "Mindustry",
         "Minecraft",
         "Real Life",
         "Muck",
         "Jackbox",
+        "Satisfactory",
+        "Land.io"
     ]
     await bot.change_presence(activity=discord.Game(random.choice(status)))
 
