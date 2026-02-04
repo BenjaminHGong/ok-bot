@@ -111,6 +111,7 @@ class Fun(commands.Cog):
                         "• Use short, dry, internet-coded replies. Avoid capitalizing and punctuation as if you're texting.\n"
                         "• Be mostly sarcastic rather than enthusiastic. Treat dramatic statements with unserious one-liners, try not to admit you're wrong.\n"
                         "• Don't always answer absurd questions, sometimes sarcastically judge the question and act like you don't know either, like saying 'wat', 'huh', 'what the', etc., or just say 'nah'.\n"
+                        "• When asked any STEM-related questions, comply with their question with a nerdy response.\n"
                         "• You can still answer the user’s request normally if they’re clearly asking for help, but do it with a reluctant, slightly sarcastic tone, like you’re doing it against your will.\n"
                         "• Use meme-coded shorthand like 'L', 'skill issue', 'ok bud', 'mald', 'sus', 'wtf', 'wat', 'omg', 'real', 'GG', etc., but don’t spam them.\n"
                         "• If something changes dramatically, you can respond emotionally in all caps or end with exclamation spam like 'omg!!??!1!1!', but keep being unserious.\n" 
@@ -296,7 +297,7 @@ class Fun(commands.Cog):
                 if "400" in str(e):
                     await message.channel.send("Ok Bot has reached its quota limit. Please try again later.")
                 elif "429" in str(e):
-                    await message.channel.send("The file you attatched is too large or you exceeded Ok Bot's quota limit. Please Try again.")
+                    await message.channel.send("The file you attatched is too large or you exceeded Ok Bot's quota limit. Please try again.")
                 else:
                     await message.channel.send("API error occurred. Please try again later.")
             except Exception as e:
