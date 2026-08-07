@@ -4,7 +4,7 @@ import discord
 import json
 import nest_asyncio
 import os
-import random
+import secrets
 import sys
 from cogs.utility import PaginationView
 from discord import option
@@ -15,23 +15,28 @@ from pathlib import Path
 from utils import update_data, get_data_once
 
 
-def check_single_instance(lockfile="bot.lock"):
+def check_single_instance(lockfile=None):
+    if lockfile is None:
+        lockfile = Path(__file__).resolve().parent.parent / "bot.lock"
+
     lock_file = open(lockfile, "w")
 
     if os.name == "nt":
         import msvcrt
+
         try:
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError:
-            print("Another instance is already running.")
-            sys.exit()
+            print("Bot is already running. Stop the existing process before starting a new one.")
+            sys.exit(0)
     else:
         import fcntl
+
         try:
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            print("Another instance is already running.")
-            sys.exit()
+            print("Bot is already running. Stop the existing process before starting a new one.")
+            sys.exit(0)
 
     return lock_file
 
@@ -78,7 +83,15 @@ class CustomStream:
 
 
 sys.stdout = CustomStream(log)
-bot = commands.Bot(
+
+
+class MyBot(commands.Bot):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+
+
+bot = MyBot(
     command_prefix="!", sync_commands=True, intents=discord.Intents.all()
 )
 
@@ -103,11 +116,10 @@ async def on_ready():
     global GUILD_IDS
     GUILD_IDS = [guild.id for guild in bot.guilds]
     await update_data("guilds", GUILD_IDS)
-    change_status.start()
-    
+    if not change_status.is_running():
+        change_status.start()
+
     print(f"{bot.user} has connected to Discord!")
-
-
 @bot.event
 async def on_application_command_error(ctx, error):
     if isinstance(error, commands.errors.NotOwner):
@@ -137,9 +149,16 @@ async def change_status():
         "Muck",
         "Jackbox",
         "Satisfactory",
-        "Land.io"
+        "Land.io",
+        "Meccha Chameleon",
+        "Bopl Battle",
+        "Factorio",
+        "Peak",
+        "Civ VI",
+        "Deep Rock Galactic",
+        "Slay the Spire 2",
     ]
-    await bot.change_presence(activity=discord.Game(random.choice(status)))
+    await bot.change_presence(activity=discord.Game(secrets.choice(status)))
 
 
 @bot.slash_command(
@@ -164,8 +183,8 @@ async def help(ctx):
 @commands.is_owner()
 async def restart(ctx):
     await ctx.respond("Restarting...", ephemeral=True)
-    await asyncio.create_subprocess_exec("pythonw", "bot/main.py")
-    os._exit(0)
+    main_path = str(Path(__file__).resolve())
+    os.execv(sys.executable, [sys.executable, main_path])
 
 
 cog = bot.create_group("cog", "Group of cog commands")
