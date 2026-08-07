@@ -1,8 +1,9 @@
 arrow
 dateparser
 deepgram-sdk
-google
+google-genai>=2.3.0
 jsonpickle
 nest-asyncio
 py-cord==2.7.0rc2
 python-dotenv
+pydantic-core==2.46.4
