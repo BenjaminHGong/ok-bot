@@ -1,6 +1,8 @@
 import os
 import base64
 import contextlib
+import math
+import re
 
 import discord
 from discord.ext import commands
@@ -230,6 +232,38 @@ class Fun(commands.Cog):
 
         return (getattr(model_response, "text", "") or "").strip(), None
 
+    def _is_quota_error(self, error):
+        code = getattr(error, "code", None)
+        if code == 429:
+            return True
+
+        status = getattr(error, "status", None)
+        if status == 429:
+            return True
+
+        if type(error).__name__ == "RateLimitError":
+            return True
+
+        return "429" in str(error)
+
+    def _extract_retry_seconds(self, error):
+        retry_match = re.search(r"retry in ([0-9.]+)s", str(error))
+        if not retry_match:
+            return None
+
+        return max(1, math.ceil(float(retry_match.group(1))))
+
+    async def _send_rate_limit_message(self, channel, error):
+        retry_seconds = self._extract_retry_seconds(error)
+        if not retry_seconds:
+            await channel.send("Ok Bot is rate-limited right now. Try again in a few seconds.")
+            return
+
+        import time
+
+        retry_at = int(time.time()) + retry_seconds
+        await channel.send(f"Ok Bot is rate-limited right now. Try again <t:{retry_at}:R>.")
+
     async def _create_model_response(self, interaction_input, hist_obj):
         if hasattr(client, "interactions"):
             interaction_kwargs = self._build_interaction_kwargs(interaction_input, hist_obj)
@@ -275,19 +309,19 @@ class Fun(commands.Cog):
             await self._send_chunked_response(message, full_text)
             if response_id:
                 await self._save_interaction_state(chat_history, chan_id, response_id, now)
-        except genai.errors.ClientError as e:
-            print(f"Gemini API error: {e}")
-            if "400" in str(e):
-                await message.channel.send("Ok Bot has reached its quota limit. Please try again later.")
-            elif "429" in str(e):
-                await message.channel.send("The file you attached is too large or you exceeded Ok Bot's quota limit. Please try again.")
+        except genai.errors.APIError as e:
+            
+            if self._is_quota_error(e):
+                await self._send_rate_limit_message(message.channel, e)
             else:
+                print(f"Gemini API error ({type(e).__name__}, code={getattr(e, 'code', None)}): {e}")
                 await message.channel.send("API error occurred. Please try again later.")
         except Exception as e:
-            print(f"Unexpected error in generate_response: {e}")
-            if "503" in str(e) or "overloaded" in str(e).lower():
-                await message.channel.send("The model is overloaded. Please try again later.")
+            if self._is_quota_error(e):
+                await self._send_rate_limit_message(message.channel, e)
+                return
             else:
+                print(f"Gemini API error ({type(e).__name__}, code={getattr(e, 'code', None)}): {e}")
                 await message.channel.send("An unexpected error occurred. Please try again.")
         finally:
             typing_task.cancel()
