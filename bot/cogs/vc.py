@@ -16,39 +16,54 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 CHAT_MODEL = "gemini-2.5-flash-preview-tts"
 
 GUILD_IDS = get_data_once("guilds")
+NO_VOICE_CHANNEL = "The bot is not connected to a voice channel."
 
 
 class VC(commands.Cog):
     def __init__(self, bot):
-        self.bot = commands.Bot = bot
+        self.bot = bot
         self.join_messages = {}  # Store join messages: {guild_id: message}
+        self._disconnect_tasks = []
 
     @commands.Cog.listener()
     async def on_connect(self):
         print("VC commands loaded")
-    
+
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        """Disconnect if bot is alone in voice channel"""
         voice_client = member.guild.voice_client
-        if voice_client is not None and voice_client.channel is not None:
-            if voice_client.channel == before.channel or voice_client.channel == after.channel:
-                if len(voice_client.channel.members) == 1 and voice_client.channel.members[0] == self.bot.user:
-                    await voice_client.disconnect()
-                    if member.guild.id in self.join_messages:
-                        try:
-                            message = self.join_messages[member.guild.id]
-                            await message.edit(content=f"Ok Bot has left <#{voice_client.channel.id}> as it was empty.")
-                            del self.join_messages[member.guild.id]
-                        except Exception as e:
-                            print(f"Failed to edit join message: {e}")
+        if not voice_client or not voice_client.channel:
+            return
 
-    sound_names = []
-    sounds = get_data_once("soundboard")
-    for name in sounds:
-        sound_names.append(name)
-    sound_names = sorted(sound_names)
+        tracked_channel = voice_client.channel
+        if tracked_channel not in (before.channel, after.channel):
+            return
+
+        if len(tracked_channel.members) != 1 or tracked_channel.members[0] != self.bot.user:
+            return
+
+        await voice_client.disconnect()
+        if member.guild.id in self.join_messages:
+            try:
+                message = self.join_messages[member.guild.id]
+                await message.edit(
+                    content=f"Ok Bot has left <#{tracked_channel.id}> as it was empty."
+                )
+                del self.join_messages[member.guild.id]
+            except Exception as e:
+                print(f"Failed to edit join message: {e}")
+
+    sound_names = sorted(get_data_once("soundboard"))
 
     vc = discord.SlashCommandGroup("vc", "Group of voice channel commands")
+
+    @staticmethod
+    def _bot_voice_perms(guild: discord.Guild, channel: discord.abc.GuildChannel):
+        me = guild.me if guild else None
+        if not me:
+            return None
+        return channel.permissions_for(me)
 
     @vc.command(
         description="Tells the bot to join the voice channel", guild_ids=GUILD_IDS
@@ -57,27 +72,34 @@ class VC(commands.Cog):
         voice = ctx.author.voice
         if not voice:
             await ctx.respond(f"{ctx.author.name} is not connected to a voice channel")
-        else:
-            voice_channel  = voice.channel
-            try:
-                await voice_channel.connect()
-                message = await ctx.respond(f"Joined {voice_channel.name}!")
-                # Store the message for later editing on disconnect
-                self.join_messages[ctx.guild.id] = message
-            except discord.ClientException:
-                await ctx.respond("I am already in a voice channel.")
-            except Exception as e:
-                await ctx.respond(f"An error occurred: {e}")
+            return
+
+        perms = self._bot_voice_perms(ctx.guild, voice.channel)
+        if perms and (not perms.connect or not perms.speak):
+            return await ctx.respond(
+                "I need both Connect and Speak permissions in that voice channel."
+            )
+
+        voice_channel = voice.channel
+        try:
+            await voice_channel.connect()
+            message = await ctx.respond(f"Joined {voice_channel.name}!")
+            # Store the message for later editing on disconnect
+            self.join_messages[ctx.guild.id] = message
+        except discord.ClientException:
+            await ctx.respond("I am already in a voice channel.")
+        except Exception as e:
+            await ctx.respond(f"An error occurred: {e}")
 
     @vc.command(
         description="Tells the bot to leave the voice channel", guild_ids=GUILD_IDS
     )
     async def leave(self, ctx):
         voice_client = ctx.guild.voice_client
-        if voice_client.is_connected():
+        if voice_client and voice_client.is_connected():
             channel_name = voice_client.channel.name
             await voice_client.disconnect()
-            
+
             # Edit the stored join message to indicate disconnect
             if ctx.guild.id in self.join_messages:
                 try:
@@ -86,24 +108,45 @@ class VC(commands.Cog):
                     del self.join_messages[ctx.guild.id]
                 except Exception as e:
                     print(f"Failed to edit join message: {e}")
-            
+
             await ctx.respond("Ok Bot has left!")
         else:
-            await ctx.respond("The bot is not connected to a voice channel.")
-        
-    def cog_unload(self):
-        for vc in self.bot.voice_clients:
-            asyncio.create_task(vc.disconnect())
-            
+            await ctx.respond(NO_VOICE_CHANNEL)
+
+    @vc.command(description="Debug voice playback status", guild_ids=GUILD_IDS)
+    async def debug(self, ctx):
+        member_voice = ctx.author.voice.channel if ctx.author.voice else None
+        bot_voice = ctx.guild.voice_client.channel if ctx.guild and ctx.guild.voice_client else None
+
+        lines = [
+            f"User channel: {member_voice.id if member_voice else 'None'}",
+            f"Bot channel: {bot_voice.id if bot_voice else 'None'}",
+        ]
+
+        if member_voice:
+            perms = self._bot_voice_perms(ctx.guild, member_voice)
+            if perms:
+                lines.append(f"Bot can connect: {perms.connect}")
+                lines.append(f"Bot can speak: {perms.speak}")
+                lines.append(f"Use voice activation: {perms.use_voice_activation}")
+
+        player = ctx.voice_client
+        if player:
+            lines.append(f"Voice connected: {getattr(player, 'is_connected', lambda: False)() if callable(getattr(player, 'is_connected', None)) else bool(player)}")
+
+        await ctx.respond("\n".join(lines), ephemeral=True)
+
     @vc.command(description="Make Ok Bot speak using Gemini TTS", guild_ids=GUILD_IDS)
     @option("text", str, description="What Ok Bot should say")
     async def say(self, ctx, text: str):
         vc = ctx.voice_client
 
         if not vc:
-            return await ctx.respond("The bot is not connected to a voice channel.")
+            return await ctx.respond(NO_VOICE_CHANNEL)
         if ctx.author.voice.channel.id != vc.channel.id:
-            return await ctx.respond("You must be in the same voice channel as the bot.")
+            return await ctx.respond(
+                "You must be in the same voice channel as the bot."
+            )
 
         await ctx.respond("Generating voice...")
 
@@ -117,13 +160,14 @@ class VC(commands.Cog):
                     speech_config=types.SpeechConfig(
                         voice_config=types.VoiceConfig(
                             prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name='Fenrir',
+                                voice_name="Fenrir",
                             )
                         )
                     ),
-                )
+                ),
             )
             data = response.candidates[0].content.parts[0].inline_data.data
+
             def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
                 with wave.open(filename, "wb") as wf:
                     wf.setnchannels(channels)
@@ -133,13 +177,14 @@ class VC(commands.Cog):
 
             # Create temporary file (will be auto-cleaned by tempfile)
             import tempfile
+
             fd, file_name = tempfile.mkstemp(suffix=".wav")
             os.close(fd)
             wave_file(file_name, data)
             wave_file(file_name, data)
             file_size = os.path.getsize(file_name)
             print(f"Wrote TTS file {file_name} ({file_size} bytes)")
-            
+
             # Play the audio in the voice channel
             def cleanup_audio(error):
                 try:
@@ -148,12 +193,11 @@ class VC(commands.Cog):
                         print(f"Cleaned up TTS file {file_name}")
                 except Exception as e:
                     print(f"Error cleaning up {file_name}: {e}")
-            
+
             source = discord.FFmpegPCMAudio(
-                executable="C:/ffmpeg/bin/ffmpeg.exe",
-                source=file_name
+                executable="C:/ffmpeg/bin/ffmpeg.exe", source=file_name
             )
-            
+
             if vc.is_playing():
                 # Clean up if already playing
                 cleanup_audio(None)
@@ -168,14 +212,17 @@ class VC(commands.Cog):
                 seconds = None
                 if retry_match:
                     seconds = float(retry_match.group(1))
-                future_time_utc = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=seconds)
+                future_time_utc = datetime.datetime.now(
+                    datetime.timezone.utc
+                ) + datetime.timedelta(seconds=seconds)
                 unix_timestamp = int(future_time_utc.timestamp())
-                discord_timestamp_string = f'<t:{unix_timestamp}:R>'
-                await ctx.send(f"Quota limited exceeded! Try again {discord_timestamp_string}")
+                discord_timestamp_string = f"<t:{unix_timestamp}:R>"
+                await ctx.send(
+                    f"Quota limited exceeded! Try again {discord_timestamp_string}"
+                )
             else:
                 print(f"TTS generation error: {e}")
                 return await ctx.respond("TTS generation failed. Try again later")
-
 
     @vc.command(description="Get a bunch of sounds to play lol", guild_ids=GUILD_IDS)
     @option(
@@ -186,16 +233,13 @@ class VC(commands.Cog):
     )
     async def soundboard(self, ctx, sound):
         vc = ctx.voice_client
-        if not vc:  # check if the bot is not in a voice channel
-            await ctx.respond("The bot is not connected to a voice channel.")
+        if not vc:
+            await ctx.respond(NO_VOICE_CHANNEL)
 
-        elif (
-            ctx.author.voice.channel.id != vc.channel.id
-        ):  # check if the bot is not in the voice channel
+        elif ctx.author.voice.channel.id != vc.channel.id:
             return await ctx.respond(
                 "You must be in the same voice channel as the bot."
-            )  # return an error message
-
+            )
         else:
             audio = discord.FFmpegPCMAudio(
                 executable="C:/ffmpeg/bin/ffmpeg.exe", source=f"sounds/{sound}.mp3"
@@ -207,6 +251,11 @@ class VC(commands.Cog):
             else:
                 vc.play(audio)
                 await ctx.respond("Sound played!", ephemeral=True)
+
+    def cog_unload(self):
+        for vc in self.bot.voice_clients:
+            task = asyncio.create_task(vc.disconnect())
+            self._disconnect_tasks.append(task)
 
 
 def setup(bot):
