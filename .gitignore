@@ -161,7 +161,6 @@ cython_debug/
 
 # Custom files
 data/autorespond.json
-data/bank.json
 data/botwhitelist.json
 data/chathistory.json
 data/channelwhitelist.json
@@ -169,3 +168,5 @@ data/grammar.json
 data/guilds.json
 data/mute.json
 data/reminders.json
+data/bank.db
+data/bank.db-journal

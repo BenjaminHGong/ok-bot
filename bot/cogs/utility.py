@@ -162,7 +162,7 @@ class Utility(commands.Cog):
                                 .replace("🌡", "bad")
                             )
     reminder = discord.SlashCommandGroup(
-        "reminder", "Create, edit and delete reminders"
+        "reminder", "Create, edit and delete reminders", guild_ids=GUILD_IDS
     )
 
     @reminder.command(
@@ -384,7 +384,9 @@ class Utility(commands.Cog):
                 emoji = "9️⃣"
             await msg.add_reaction(emoji)
 
-    ar = discord.SlashCommandGroup("ar", "Automatically respond to specific keywords")
+    ar = discord.SlashCommandGroup(
+        "ar", "Automatically respond to specific keywords", guild_ids=GUILD_IDS
+    )
 
     @commands.has_permissions(manage_messages=True)
     @ar.command(description="Create autorespond triggers", guild_ids=GUILD_IDS)
@@ -412,7 +414,7 @@ class Utility(commands.Cog):
     @ar.command(description="Edit autoresponse triggers", guild_ids=GUILD_IDS)
     @option("index", int, description="Autoresponse trigger to edit")
     @option("answer", str, description="Message to change to")
-    async def edit(self, ctx, index, answer):
+    async def edit(self, ctx, index, answer):  # noqa: F811
         message_list = await get_data("autorespond")
         message_list[str(ctx.guild.id)][index]["message"] = answer
         if index < 1 or index > len(message_list[str(ctx.guild.id)]):
@@ -426,7 +428,7 @@ class Utility(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     @ar.command(description="Delete autoresponse triggers", guild_ids=GUILD_IDS)
     @option("index", int, description="Autoresponse trigger to delete")
-    async def delete(self, ctx, index):
+    async def delete(self, ctx, index):  # noqa: F811
         message_list = await get_data("autorespond")
         if index < 1 or index > len(message_list[str(ctx.guild.id)]):
             await ctx.respond(
@@ -438,7 +440,7 @@ class Utility(commands.Cog):
         await ctx.respond("Autoresponse deleted")
 
     @ar.command(description="Show autoresponse triggers", guild_ids=GUILD_IDS)
-    async def show(self, ctx):
+    async def show(self, ctx):  # noqa: F811
         try:
             message_list = await get_data("autorespond")
             data = []

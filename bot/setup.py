@@ -3,7 +3,16 @@ import os
 
 data = {
     "autorespond": {},
-    "bank": {},
+    "botconfig": {
+        "system_instruction": None,
+        "model": "gemini-3.5-flash-lite",
+        "max_output_tokens": 1024,
+        "thinking_level": None,
+        "thinking_summaries": None,
+        "tool_choice": None,
+        "seed": None,
+        "stop_sequences": None,
+    },
     "botwhitelist": [],
     "channelwhitelist": [],
     "chathistory": {},

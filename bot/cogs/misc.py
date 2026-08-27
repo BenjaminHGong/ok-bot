@@ -17,7 +17,7 @@ class Misc(commands.Cog):
         print("Misc commands loaded")
 
     @commands.slash_command(
-        description="Calculate big fibonacci numbers", guild_id=GUILD_IDS
+        description="Calculate big fibonacci numbers", guild_ids=GUILD_IDS
     )
     @option(
         "n",

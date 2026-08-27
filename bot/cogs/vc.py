@@ -56,7 +56,9 @@ class VC(commands.Cog):
 
     sound_names = sorted(get_data_once("soundboard"))
 
-    vc = discord.SlashCommandGroup("vc", "Group of voice channel commands")
+    vc = discord.SlashCommandGroup(
+        "vc", "Group of voice channel commands", guild_ids=GUILD_IDS
+    )
 
     @staticmethod
     def _bot_voice_perms(guild: discord.Guild, channel: discord.abc.GuildChannel):

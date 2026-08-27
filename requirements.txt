@@ -4,6 +4,7 @@ deepgram-sdk
 google-genai>=2.3.0
 jsonpickle
 nest-asyncio
-py-cord==2.7.0rc2
+py-cord
+py-cord[voice]
 python-dotenv
 pydantic-core==2.46.4

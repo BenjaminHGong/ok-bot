@@ -5,7 +5,10 @@ import json
 import nest_asyncio
 import os
 import secrets
+import subprocess
 import sys
+import time
+import traceback
 from cogs.utility import PaginationView
 from discord import option
 from discord.ext import commands, tasks
@@ -122,14 +125,29 @@ async def on_ready():
     print(f"{bot.user} has connected to Discord!")
 @bot.event
 async def on_application_command_error(ctx, error):
+    cause = (
+        error.__cause__
+        if isinstance(error, discord.ApplicationCommandInvokeError)
+        else error
+    )
     if isinstance(error, commands.errors.NotOwner):
-        await ctx.respond("This command is reserved for the bot owner.", ephemeral=True)
+        desc = "This command is reserved for the bot owner."
     elif isinstance(error, commands.errors.MissingPermissions):
-        await ctx.respond(
-            "You don't have permission to use this command.", ephemeral=True
-        )
+        desc = "You don't have permission to use this command."
+    elif isinstance(error, commands.errors.CommandOnCooldown):
+        desc = f"Slow down. Try again <t:{int(time.time() + error.retry_after)}:R>."
     else:
-        raise error
+        print(
+            "".join(
+                traceback.format_exception(type(cause), cause, cause.__traceback__)
+            )
+        )
+        desc = f"Something went wrong: {type(cause).__name__}: {cause}"
+
+    try:
+        await ctx.respond(desc, ephemeral=True)
+    except Exception:
+        pass
 
 
 @tasks.loop(seconds=3600)  # status changing
@@ -184,10 +202,20 @@ async def help(ctx):
 async def restart(ctx):
     await ctx.respond("Restarting...", ephemeral=True)
     main_path = str(Path(__file__).resolve())
-    os.execv(sys.executable, [sys.executable, main_path])
+    root_dir = str(Path(__file__).resolve().parent.parent)
+    # Release the single-instance lock BEFORE spawning the new process, otherwise
+    # the fresh instance races this one for the lock and can exit with "Bot is
+    # already running". os.execv is unreliable on Windows (can raise OSError and
+    # never restart), so spawn a new process and exit instead.
+    try:
+        lock.close()
+    except Exception:
+        pass
+    subprocess.Popen([sys.executable, main_path], cwd=root_dir)
+    os._exit(0)
 
 
-cog = bot.create_group("cog", "Group of cog commands")
+cog = bot.create_group("cog", "Group of cog commands", guild_ids=GUILD_IDS)
 
 
 @cog.command(description="Check if a cog is loaded", guild_ids=GUILD_IDS)
@@ -205,6 +233,8 @@ async def check(ctx, extension):
         desc = "Cog is loaded"
     except discord.ExtensionNotFound:
         desc = "Cog not found"
+    except Exception as e:
+        desc = f"Failed to load {extension}:\n{type(e).__name__}: {e}"
     else:
         desc = "Cog is unloaded"
         bot.unload_extension(f"cogs.{extension}")
@@ -228,6 +258,8 @@ async def load(ctx, extension):
         desc = f"{extension} not found"
     except discord.ExtensionAlreadyLoaded:
         desc = f"{extension} already loaded"
+    except Exception as e:
+        desc = f"Failed to load {extension}:\n{type(e).__name__}: {e}"
 
     embed = discord.Embed(title="Load", description=desc, color=0xFF00C8)
     await ctx.respond(embed=embed, ephemeral=True)
@@ -249,6 +281,8 @@ async def unload(ctx, extension):
         desc = f"{extension} is not loaded"
     except discord.ExtensionNotFound:
         desc = f"{extension} not found"
+    except Exception as e:
+        desc = f"Failed to unload {extension}:\n{type(e).__name__}: {e}"
 
     embed = discord.Embed(title="Unload", description=desc, color=0xFF00C8)
     await ctx.respond(embed=embed, ephemeral=True)
@@ -266,11 +300,32 @@ async def reload(ctx, extension):
     try:
         bot.reload_extension(f"cogs.{extension}")
         desc = f"{extension} successfully reloaded"
+        color = 0x00FF00
+        try:
+            await bot.sync_commands()
+        except Exception:
+            pass
     except discord.ExtensionNotLoaded:
         desc = f"{extension} is not loaded"
+        color = 0xFF0000
+    except discord.ExtensionNotFound:
+        desc = f"{extension} not found"
+        color = 0xFF0000
+    except (discord.ExtensionFailed, discord.NoEntryPointError, SyntaxError, ImportError) as e:
+        desc = f"Failed to reload {extension}:\n{type(e).__name__}: {e}"
+        color = 0xFF0000
+    except Exception as e:
+        print(
+            "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        )
+        desc = f"Failed to reload {extension}:\n{type(e).__name__}: {e}"
+        color = 0xFF0000
 
-    embed = discord.Embed(title="Reload", description=desc, color=0xFF00C8)
-    await ctx.respond(embed=embed, ephemeral=True)
+    embed = discord.Embed(title="Reload", description=desc, color=color)
+    try:
+        await ctx.respond(embed=embed, ephemeral=True)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
