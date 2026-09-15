@@ -14,12 +14,15 @@ data = {
         "stop_sequences": None,
     },
     "botwhitelist": [],
+    "brawlers": {},
     "channelwhitelist": [],
     "chathistory": {},
     "grammar": [],
     "guilds": [],
+    "maps": [],
     "mute": [],
     "reminders": {},
+    "soundboard": [],
 }
 
 for filename, content in data.items():
