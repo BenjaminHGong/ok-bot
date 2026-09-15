@@ -1,8 +1,6 @@
 arrow
 dateparser
-deepgram-sdk
 google-genai>=2.3.0
-jsonpickle
 nest-asyncio
 py-cord
 py-cord[voice]
