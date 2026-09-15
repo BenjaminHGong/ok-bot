@@ -9,9 +9,12 @@ from google.genai import types
 import os
 import re
 from utils import get_data_once
+import shutil
 import wave
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+FFMPEG_EXECUTABLE = shutil.which("ffmpeg") or "C:/ffmpeg/bin/ffmpeg.exe"
 
 CHAT_MODEL = "gemini-2.5-flash-preview-tts"
 
@@ -197,7 +200,7 @@ class VC(commands.Cog):
                     print(f"Error cleaning up {file_name}: {e}")
 
             source = discord.FFmpegPCMAudio(
-                executable="C:/ffmpeg/bin/ffmpeg.exe", source=file_name
+                executable=FFMPEG_EXECUTABLE, source=file_name
             )
 
             if vc.is_playing():
@@ -244,7 +247,7 @@ class VC(commands.Cog):
             )
         else:
             audio = discord.FFmpegPCMAudio(
-                executable="C:/ffmpeg/bin/ffmpeg.exe", source=f"sounds/{sound}.mp3"
+                executable=FFMPEG_EXECUTABLE, source=f"sounds/{sound}.mp3"
             )
             if vc.is_playing():
                 await ctx.respond(
