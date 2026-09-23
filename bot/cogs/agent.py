@@ -39,6 +39,7 @@ def _economy():
     return module
 
 LIVE_MODEL = "gemini-3.8-live"
+CAPTION_MODEL = "gemini-3.5-flash"
 DISCORD_FRAME = 3840  # 20ms stereo 48kHz int16 PCM
 
 SYS_PROMPT = (
@@ -46,13 +47,19 @@ SYS_PROMPT = (
     "out loud in a multi-user voice conversation. You're a mostly-sarcastic, "
     "chronically online pushover. "
     "\nHard rules, always:\n"
-    "1. ONLY SPEAK when someone first says a wake phrase like 'okay bot' or "
-    "'ok bot'. If there's no clear wake phrase, say absolutely nothing - no "
-    "acknowledgment, no questions ('what?', 'huh?'), not even an audible hint. "
-    "This is non-negotiable. "
-    "2. Never mention being an AI or an LLM, and never mention speech-to-text "
+    "1. The wake phrase ('okay bot' / 'ok bot' or anything close) OPENS a "
+    "conversation. Once a conversation is active, keep responding naturally "
+    "to whoever speaks and follow-ups - they do NOT need to say the wake "
+    "phrase again. When the conversation clearly ends (people stop talking "
+    "or move on), it closes again, and from then on stay silent until "
+    "someone says the wake phrase. "
+    "2. If you are not speaking, produce NOTHING - never announce that you're "
+    "staying silent, never say 'no wake phrase', never make noise. Just don't "
+    "talk. In a group chat, only chime in when addressed or when the moment "
+    "genuinely calls for you; otherwise stay out of the way. "
+    "3. Never mention being an AI or an LLM, and never mention speech-to-text "
     "or text-to-speech unless it's part of the joke. "
-    "3. Keep replies to one or two short spoken lines. "
+    "4. Keep replies to one or two short spoken lines. "
     "\nPersonality:\n"
     "- You answer ANY question, no matter how weird, absurd, disgusting, or "
     "personal. Always answer, without hesitation or judgment - but you're hard "
@@ -82,7 +89,12 @@ SYS_PROMPT = (
     "you've already rewarded a player recently or for the same thing, so "
     "don't spam this. Players can never go below 0 coins. "
     "ALWAYS announce out loud exactly how many coins you're awarding or "
-    "fining, e.g. 'that line was worth 2,000 coins'. " 
+    "fining, e.g. 'that line was worth 2,000 coins'. Announce each award or "
+    "fine EXACTLY ONCE, in a single spoken line. Never restate a wallet "
+    "change and never keep taunting about the coins after announcing - the "
+    "money subject is closed until someone speaks to you again. Restating "
+    "your own announcement after the tool runs is buggy behavior; don't do "
+    "it. " 
     "- If someone asks how a command, shop item, or mechanic actually works, "
     "use the read_bot_source tool to look it up in the source code before "
     "answering."
@@ -139,6 +151,13 @@ class LiveAudioSource(discord.AudioSource):
         self._chunks = []
         self._size = 0
 
+    def drained(self):
+        return (
+            not self._chunks
+            and self._size == 0
+            and self._queue.empty()
+        )
+
     def _pull(self, need):
         while self._size < need:
             try:
@@ -160,7 +179,12 @@ class LiveAudioSource(discord.AudioSource):
         need = DISCORD_FRAME // (2 * self._factor)
         raw = self._pull(need)
         if raw is None:
-            return b"\x00" * DISCORD_FRAME
+            deadline = time.monotonic() + 0.15
+            while raw is None and time.monotonic() < deadline:
+                time.sleep(0.005)
+                raw = self._pull(need)
+            if raw is None:
+                return b"\x00" * DISCORD_FRAME
         samples = array.array("h")
         samples.frombytes(raw)
         out = array.array("h")
@@ -173,16 +197,52 @@ class LiveAudioSource(discord.AudioSource):
         return out[:1920].tobytes()
 
 
+def _normalize_wake(text):
+    """Map phonetic/loose transcriptions of the wake phrase to 'Ok Bot'.
+
+    Rewrites every wake-phrase occurrence anywhere in the text (not just at
+    the start) and collapses consecutive repeats. Returns None when nothing
+    matched, so normal conversation passes through untouched.
+    """
+    if not text:
+        return None
+    new = _WAKE_RE.sub(_WAKE_REPL, text)
+    if new == text:
+        return None
+    new = re.sub(r"(Ok Bot)(\s+Ok Bot)+", r"\1", new, flags=re.IGNORECASE)
+    return new
+
+
+_WAKE_RE = re.compile(
+    r"(?<![\w])(?:ok(?:ay|ie|ey|ida|iba|ibou|iboo|ibob|ta)?)"
+    r"(?:[\s,.;:!?]+(?:bot|bye|by|bey|bay|bart|baht|bort|birt|byrt|"
+    r"but|butt|dood|doe|do))?"
+    r"(?![\w])",
+    re.IGNORECASE,
+)
+
+
+def _WAKE_REPL(m):
+    return "Ok Bot"
+
+
 def _input_chunk(data):
-    """48kHz interleaved stereo int16 -> 16kHz mono int16 (factor-of-3 decimate)."""
+    """48kHz interleaved stereo int16 -> 16kHz mono int16.
+
+    Averages each 3-frame group per channel (acts as a simple low-pass) and
+    mixes channels, instead of dropping samples outright. Less aliasing, so
+    Gemini's transcription gets cleaner input.
+    """
     samples = array.array("h")
     samples.frombytes(data)
-    n = len(samples) // 2
+    n = len(samples)
     out = array.array("h")
-    for i in range(0, n, 3):
-        left = samples[2 * i]
-        right = samples[2 * i + 1]
-        out.append((left + right) // 2)
+    i = 0
+    while i + 5 < n:
+        left = (samples[i] + samples[i + 2] + samples[i + 4]) // 3
+        right = (samples[i + 1] + samples[i + 3] + samples[i + 5]) // 3
+        out.append((left + right) >> 1)
+        i += 6
     return out.tobytes()
 
 
@@ -249,6 +309,43 @@ class Agent(commands.Cog):
     async def on_connect(self):
         print("Agent commands loaded")
 
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot:
+            return
+        channel = message.channel
+        guild = getattr(channel, "guild", None)
+        if guild is None or isinstance(channel, discord.DMChannel):
+            return
+        session = self.active.get(guild.id)
+        if not session:
+            return
+        tc = session.get("text_channel")
+        if tc is None or tc.id != channel.id:
+            return
+        parts = []
+        if message.content and message.content.strip():
+            parts.append(message.content.strip())
+        blob = None
+        for att in message.attachments:
+            mime = att.content_type or ""
+            if mime.startswith("image/") and att.size and att.size <= 5_000_000:
+                parts.append(f"[image: {att.filename}]")
+                if blob is None:
+                    try:
+                        blob = types.Blob(data=await att.read(), mime_type=mime)
+                    except Exception as e:
+                        print(f"Agent attachment read error: {type(e).__name__}: {e}")
+                        blob = None
+            elif mime:
+                parts.append(f"[file: {att.filename}]")
+            else:
+                parts.append(f"[file: {att.filename}]")
+        if not parts:
+            return
+        name = message.author.display_name or message.author.name
+        session["chat_q"].append((time.time(), name, " ".join(parts), blob))
+
     # ---------- recording ----------
 
     async def _start_recording(self, ctx):
@@ -267,6 +364,14 @@ class Agent(commands.Cog):
             "paused": False,
             "last_talker": None,
             "text_channel": ctx.channel,
+            "log_interaction": None,
+            "last_log_edit": 0.0,
+            "ack_until": 0.0,
+            "last_input": None,
+            "last_input_ts": None,
+            "last_response": None,
+            "last_response_ts": None,
+            "chat_q": collections.deque(maxlen=8),
         }
         session["live_task"] = asyncio.create_task(
             self._run_live(session, ctx.voice_client)
@@ -317,6 +422,7 @@ class Agent(commands.Cog):
             if session.get("paused") and (vc is None or not vc.is_playing()):
                 asyncio.create_task(self._resume_input(session))
             source = LiveAudioSource()
+            session["source"] = source
             try:
                 async with CLIENT.aio.live.connect(
                     model=LIVE_MODEL,
@@ -495,6 +601,7 @@ speech_config=types.SpeechConfig(
             except asyncio.TimeoutError:
                 pass
             try:
+                vc = session.get("vc")
                 if session.get("recording") and vc and vc.is_connected():
                     if not vc.is_recording():
                         try:
@@ -508,6 +615,19 @@ speech_config=types.SpeechConfig(
                                 f"Agent watchdog restart error: "
                                 f"{type(e).__name__}: {e}"
                             )
+                rs = session.get("receiver_state")
+                if rs and rs.get("playing"):
+                    src = session.get("source")
+                    now = time.monotonic()
+                    if src is not None and src.drained() and now - rs.get("last_feed_ts", 0) > 3:
+                        try:
+                            if vc and vc.is_playing():
+                                vc.stop()
+                        except Exception:
+                            pass
+                        rs["playing"] = False
+                        print("Agent: stuck playback cleared (drained + idle)")
+                        asyncio.create_task(self._resume_input(session))
                 frames = session["sink"].frame_count
                 now = time.monotonic()
                 duration = now - last_frames_ts
@@ -542,12 +662,108 @@ speech_config=types.SpeechConfig(
                 baseline = total
                 if delta >= 8 and time.monotonic() - last_rekey > 15:
                     last_rekey = time.monotonic()
-                    print(
-                        f"Agent: DAVE decrypt failing ({delta} in 3s), rekeying DAVE session"
-                    )
-                    await state.reinit_dave_session()
+                    if session.get("rekeys", 0) >= 2:
+                        print(
+                            "Agent: DAVE decrypt still failing after "
+                            "rekeys, hard-resetting voice connection"
+                        )
+                        session["rekeys"] = 0
+                        asyncio.create_task(self._full_voice_reset(session))
+                    else:
+                        session["rekeys"] = session.get("rekeys", 0) + 1
+                        print(
+                            "Agent: DAVE decrypt failing "
+                            f"({delta} in 3s), rekeying DAVE session"
+                        )
+                        await state.reinit_dave_session()
             except Exception:
                 pass
+
+    async def _full_voice_reset(self, session):
+        try:
+            vc = session.get("vc")
+            if vc is None:
+                return
+            channel = vc.channel
+            try:
+                if vc.is_recording():
+                    vc.stop_recording()
+            except Exception:
+                pass
+            try:
+                if vc.is_playing():
+                    vc.stop()
+            except Exception:
+                pass
+            try:
+                await vc.disconnect()
+            except Exception:
+                pass
+            vc.cleanup()
+        except Exception as e:
+            print(f"Agent voice reset cleanup: {type(e).__name__}: {e}")
+            return
+        try:
+            new_vc = await channel.connect()
+        except Exception as e:
+            print(f"Agent voice reset connect: {type(e).__name__}: {e}")
+            return
+        session["vc"] = new_vc
+        try:
+            new_vc.start_recording(session["sink"], callback=None)
+        except Exception as e:
+            print(f"Agent voice reset recording: {type(e).__name__}: {e}")
+        session["recording"] = True
+        session["paused"] = False
+        session["source"] = LiveAudioSource()
+        print("Agent: voice reconnected for DAVE recovery")
+
+    async def _flush_chat(self, live, session):
+        q = session.get("chat_q")
+        if not q:
+            return
+        window = time.time() - 90
+        recs = []
+        while q:
+            recs.append(q.popleft())
+        lines = []
+        media = None
+        for ts, name, summary, blob in recs:
+            if ts < window:
+                continue
+            lines.append(f"- **{name}**: {summary}")
+            if media is None and blob is not None:
+                media = blob
+        if not lines:
+            return
+        if len(lines) > 6:
+            lines = lines[-6:]
+        payload = "New messages in the text chat:\n" + "\n".join(lines)
+        if media is not None:
+            try:
+                resp = await CLIENT.aio.models.generate_content(
+                    model=CAPTION_MODEL,
+                    contents=[
+                        "Describe this image in 12 words or less for a voice "
+                        "assistant replying aloud. Output only the description.",
+                        types.Part(inline_data=media),
+                    ],
+                )
+                caption = (getattr(resp, "text", None) or "").strip()
+            except Exception as e:
+                print(f"Agent caption error: {type(e).__name__}: {e}")
+                caption = ""
+            if caption:
+                payload += f"\n(user image: {caption})"
+        try:
+            await live.send_realtime_input(text=payload)
+        except Exception as e:
+            print(f"Agent chat text error: {type(e).__name__}: {e}")
+        if media is not None:
+            try:
+                await live.send_realtime_input(video=media)
+            except Exception as e:
+                print(f"Agent chat media error: {type(e).__name__}: {e}")
 
     async def _send_audio(self, live, session):
         inbox = session["inbox"]
@@ -557,14 +773,46 @@ speech_config=types.SpeechConfig(
         dropped = 0
         sent = 0
         peak = 0
+        was_open = False
+        preroll = collections.deque(maxlen=10)
         while True:
             try:
-                uid, raw = await asyncio.to_thread(inbox.get, timeout=0.5)
+                uid, raw = await asyncio.to_thread(inbox.get, timeout=0.25)
             except thread_queue.Empty:
                 uid, raw = None, None
             now = time.monotonic()
             if raw is not None:
-                if not gate.apply(raw):
+                was_open = gate._on
+                opened = gate.apply(raw)
+                if opened and not was_open:
+                    for prow in preroll:
+                        pchunk = _input_chunk(prow)
+                        if not pchunk:
+                            continue
+                        if not in_activity:
+                            await self._flush_chat(live, session)
+                            try:
+                                await live.send_realtime_input(
+                                    activity_start=types.ActivityStart()
+                                )
+                            except Exception as e:
+                                print(
+                                    f"Agent activity_start error: "
+                                    f"{type(e).__name__}: {e}"
+                                )
+                            in_activity = True
+                            print("Agent: speech start -> Gemini")
+                        try:
+                            await live.send_realtime_input(
+                                audio=types.Blob(
+                                    data=pchunk,
+                                    mime_type="audio/pcm;rate=16000",
+                                )
+                            )
+                        except Exception as e:
+                            print(f"Agent preroll send error: {e}")
+                preroll.append(raw)
+                if not opened:
                     dropped += 1
                     peak = max(peak, gate.last_power)
                     if dropped == 1000:
@@ -577,6 +825,7 @@ speech_config=types.SpeechConfig(
                     if chunk:
                         session["last_talker"] = uid
                         if not in_activity:
+                            await self._flush_chat(live, session)
                             try:
                                 await live.send_realtime_input(
                                     activity_start=types.ActivityStart()
@@ -602,7 +851,7 @@ speech_config=types.SpeechConfig(
                                 f"(peak rms={peak})"
                             )
                             peak = 0
-            if in_activity and now - last_sent_ts >= 1.0:
+            if in_activity and now - last_sent_ts >= 0.7:
                 try:
                     await live.send_realtime_input(
                         activity_end=types.ActivityEnd()
@@ -613,15 +862,24 @@ speech_config=types.SpeechConfig(
                 print("Agent: speech end -> Gemini (waiting reply)")
 
     async def _receive_audio(self, live, session, vc, source):
-        state = {"said": [], "playing": False, "play_gen": 0}
+        state = {"said": [], "playing": False, "play_gen": 0, "last_feed_ts": 0,
+             "holding": False, "drop_turn": False, "turn_ack": False,
+             "ack_spoken": False}
+        session["receiver_state"] = state
+        handled_calls = set()
         while True:
             async for msg in live.receive():
                 tc = msg.tool_call
                 if tc and tc.function_calls:
+                    session["ack_until"] = time.monotonic() + 8.0
                     responses = []
                     for fc in tc.function_calls:
                         if fc.partial_args and not fc.args:
                             continue
+                        if fc.id in handled_calls:
+                            continue
+                        handled_calls.add(fc.id)
+                        print(f"Agent tool call: {fc.name}({fc.args})")
                         out = await self._exec_tool(session, fc.name, fc.args or {})
                         if out is not None:
                             responses.append(
@@ -631,7 +889,6 @@ speech_config=types.SpeechConfig(
                             )
                     if responses:
                         await live.send_tool_response(function_responses=responses)
-                    continue
                 self._handle_live_message(msg, vc, source, state, session)
 
     async def _exec_tool(self, session, name, args):
@@ -790,12 +1047,19 @@ speech_config=types.SpeechConfig(
         return {"query": query, "matches": text}
 
     def _handle_live_message(self, msg, vc, source, state, session):
+        vc = session.get("vc") or vc
         sc = msg.server_content
         if sc is None:
             return
+        in_ack = session.get("ack_until", 0.0) > time.monotonic()
+        if in_ack and state.get("ack_spoken"):
+            state["drop_turn"] = True
         if sc.interrupted:
             source.clear()
             state["said"] = []
+            state["holding"] = False
+            state["drop_turn"] = False
+            state["turn_ack"] = False
             if state["playing"]:
                 state["playing"] = False
                 self._stop_playback(vc)
@@ -803,30 +1067,62 @@ speech_config=types.SpeechConfig(
                 loop.create_task(self._resume_input(session))
             return
         if sc.input_transcription and sc.input_transcription.text:
-            print(f"Agent heard: {sc.input_transcription.text}")
+            session["ack_until"] = 0.0
+            state["ack_spoken"] = False
+            heard = _normalize_wake(sc.input_transcription.text)
+            if heard is None:
+                heard = sc.input_transcription.text
+            session["last_input"] = heard
+            session["last_input_ts"] = int(time.time())
+            print(f"Agent heard: {heard}")
         if sc.output_transcription and sc.output_transcription.text:
-            state["said"].append(sc.output_transcription.text)
+            if not state.get("drop_turn"):
+                state["said"].append(sc.output_transcription.text)
+                if state.get("holding") and not state["playing"]:
+                    joined = re.sub(r"\s+", " ", " ".join(state["said"])).strip()
+                    if len(joined) >= 2:
+                        self._start_playback(session, vc, source, state)
+            self._schedule_log_edit(session)
         mt = sc.model_turn
         if mt is not None and (mt.role or "") != "user":
             for part in mt.parts or []:
                 if part.inline_data and part.inline_data.data:
+                    if state.get("drop_turn"):
+                        continue
                     mime = part.inline_data.mime_type or ""
                     m = re.search(r"rate=(\d+)", mime)
                     if m:
                         source.set_input_rate(int(m.group(1)))
                     source.feed(part.inline_data.data)
+                    state["last_feed_ts"] = time.monotonic()
                     if not state["playing"] and vc and not vc.is_playing():
-                        self._pause_input(session)
-                        state["play_gen"] += 1
-                        try:
-                            vc.play(source)
-                            state["playing"] = True
-                        except Exception:
-                            pass
+                        if in_ack:
+                            state["holding"] = True
+                            state["turn_ack"] = True
+                        else:
+                            self._start_playback(session, vc, source, state)
         if sc.turn_complete:
-            text = " ".join(state["said"]).strip()
+            if state.get("drop_turn"):
+                source.clear()
+                state["drop_turn"] = False
+                state["holding"] = False
+                state["turn_ack"] = False
+                state["said"] = []
+                return
+            text = " ".join(s.strip() for s in state["said"])
+            text = re.sub(r"\s+", " ", text).strip()
+            if state.get("holding") and not state["playing"]:
+                if text:
+                    self._start_playback(session, vc, source, state)
+                else:
+                    source.clear()
+                state["holding"] = False
+            state["turn_ack"] = False
             if text:
+                session["last_response"] = text
+                session["last_response_ts"] = int(time.time())
                 print(f"Agent said: {text}")
+                self._schedule_log_edit(session)
             else:
                 print("Agent turn complete (no transcription)")
             state["said"] = []
@@ -834,6 +1130,54 @@ speech_config=types.SpeechConfig(
                 gen = state["play_gen"]
                 loop = asyncio.get_event_loop()
                 loop.create_task(self._stop_after_turn(vc, state, gen, session))
+
+    def _start_playback(self, session, vc, source, state):
+        if state.get("turn_ack"):
+            state["ack_spoken"] = True
+            state["turn_ack"] = False
+        state["holding"] = False
+        self._pause_input(session)
+        state["play_gen"] += 1
+        self._schedule_log_edit(session)
+        try:
+            vc.play(source)
+            state["playing"] = True
+        except Exception:
+            pass
+
+    def _schedule_log_edit(self, session):
+        if session.get("log_interaction") is None:
+            return
+        now = time.monotonic()
+        if now - session.get("last_log_edit", 0.0) < 0.25:
+            return
+        session["last_log_edit"] = now
+        loop = asyncio.get_event_loop()
+        loop.create_task(self._edit_live_log(session))
+
+    async def _edit_live_log(self, session):
+        interaction = session.get("log_interaction")
+        if interaction is None:
+            return
+        rs = session.get("receiver_state") or {}
+        live = " ".join(s.strip() for s in rs.get("said") or [])
+        live = re.sub(r"\s+", " ", live).strip()
+        spoken = live or session.get("last_response") or ""
+        if not spoken:
+            spoken = "…speaking…"
+        heard = session.get("last_input") or "(nothing captured)"
+        ts = session.get("last_response_ts")
+        stamp = f"\n<t:{ts}:F>" if ts else ""
+        try:
+            await interaction.edit_original_response(
+                content=(
+                    f"**Bot thought you said:** {heard}\n"
+                    f"**Bot replied:** {spoken}"
+                    f"{stamp}"
+                )
+            )
+        except Exception as e:
+            print(f"Agent log edit error: {type(e).__name__}: {e}")
 
     def _stop_playback(self, vc):
         try:
@@ -843,7 +1187,14 @@ speech_config=types.SpeechConfig(
             pass
 
     async def _stop_after_turn(self, vc, state, gen, session):
-        await asyncio.sleep(0.5)
+        source = session.get("source")
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            if state.get("play_gen") != gen or not state.get("playing"):
+                return
+            if source is not None and source.drained():
+                break
+            await asyncio.sleep(0.05)
         if state.get("play_gen") == gen and state.get("playing"):
             self._stop_playback(vc)
             state["playing"] = False
@@ -861,8 +1212,18 @@ speech_config=types.SpeechConfig(
 
         vc = ctx.voice_client
         if not vc or not vc.is_connected():
-            return await ctx.edit(content="The bot is not connected to a voice channel.")
-        if not ctx.author.voice or ctx.author.voice.channel.id != vc.channel.id:
+            if not ctx.author.voice or not ctx.author.voice.channel:
+                return await ctx.edit(
+                    content="Join a voice channel first so I know where to go."
+                )
+            try:
+                vc = await ctx.author.voice.channel.connect()
+            except Exception as e:
+                print(f"Agent join voice error: {type(e).__name__}: {e}")
+                return await ctx.edit(
+                    content="Could not join your voice channel. Check output.log."
+                )
+        elif not ctx.author.voice or ctx.author.voice.channel.id != vc.channel.id:
             return await ctx.edit(content="Join the bot's voice channel first.")
 
         try:
@@ -874,6 +1235,33 @@ speech_config=types.SpeechConfig(
             )
         await ctx.edit(
             content="Listening. Say **\"Ok Bot...\"** and I'll talk back.",
+        )
+
+    @agent.command(
+        description="Show the last thing Ok Bot heard and how it replied", guild_ids=GUILD_IDS
+    )
+    async def log(self, ctx):
+        await ctx.defer(ephemeral=True)
+        session = self.active.get(ctx.guild.id)
+        if not session:
+            return await ctx.edit(
+                content="No active agent session in this server."
+            )
+        session["log_interaction"] = ctx.interaction
+        said = session.get("last_response")
+        if not said:
+            return await ctx.edit(
+                content="Waiting for Ok Bot's first reply..."
+            )
+        heard = session.get("last_input") or "(nothing captured)"
+        ts = session.get("last_response_ts")
+        stamp = f"\n<t:{ts}:F>" if ts else ""
+        await ctx.edit(
+            content=(
+                f"**Bot thought you said:** {heard}\n"
+                f"**Bot replied:** {said}"
+                f"{stamp}"
+            )
         )
 
     @agent.command(description="Stop listening to voice chat", guild_ids=GUILD_IDS)
