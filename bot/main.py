@@ -56,7 +56,7 @@ load_dotenv(Path(r".env"))
 TOKEN = os.environ.get("DISCORD_TOKEN")
 nest_asyncio.apply()
 log_file = "output.log"
-log = open(log_file, "a")
+log = open(log_file, "a", encoding="utf-8")
 try:
     GUILD_IDS = get_data_once("guilds")
 except Exception:
@@ -86,6 +86,20 @@ class CustomStream:
 
 
 sys.stdout = CustomStream(log)
+
+import logging
+
+_log_handler = logging.StreamHandler(sys.stdout)
+_log_handler.setFormatter(
+    logging.Formatter(
+        "[%(asctime)s] %(name)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+)
+receiving_logger = logging.getLogger("discord.voice")
+receiving_logger.addHandler(_log_handler)
+receiving_logger.setLevel(logging.WARNING)
+logging.getLogger("discord.voice.receive.reader").setLevel(logging.CRITICAL)
 
 
 class MyBot(commands.Bot):

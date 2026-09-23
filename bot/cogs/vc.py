@@ -8,9 +8,11 @@ from google import genai
 from google.genai import types
 import os
 import re
+import time
 from utils import get_data_once
 import shutil
 import wave
+import httpx
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -27,6 +29,9 @@ class VC(commands.Cog):
         self.bot = bot
         self.join_messages = {}  # Store join messages: {guild_id: message}
         self._disconnect_tasks = []
+        self.say_queues = {}  # guild_id -> queue of TTS file paths
+        self.say_tasks = {}  # guild_id -> worker task
+        self.play_files = {}  # guild_id -> currently playing TTS file path
 
     @commands.Cog.listener()
     async def on_connect(self):
@@ -141,75 +146,168 @@ class VC(commands.Cog):
 
         await ctx.respond("\n".join(lines), ephemeral=True)
 
-    @vc.command(description="Make Ok Bot speak using Gemini TTS", guild_ids=GUILD_IDS)
+    @staticmethod
+    async def _fish_tts(api_key: str, text: str):
+        body = {"text": text, "format": "mp3"}
+        voice_id = os.getenv("FISH_VOICE_ID")
+        if voice_id:
+            body["reference_id"] = voice_id
+        try:
+            async with httpx.AsyncClient(timeout=60) as http:
+                resp = await http.post(
+                    "https://api.fish.audio/v1/tts",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "model": "s2.1-pro-free",
+                    },
+                    json=body,
+                )
+            if resp.status_code != 200:
+                print(f"Fish TTS error {resp.status_code}: {resp.text}")
+                return None, None
+            print(f"Fish TTS generated {len(resp.content)} bytes")
+            return resp.content, "mp3"
+        except httpx.HTTPError as e:
+            print(f"Fish TTS request error: {e}")
+            return None, None
+
+    @staticmethod
+    def _pcm_to_wav(pcm, channels=1, rate=24000, sample_width=2):
+        import io
+
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(rate)
+            wf.writeframes(pcm)
+        return buffer.getvalue()
+
+    def _cleanup_file(self, file_name):
+        last_error = None
+        for _ in range(5):
+            try:
+                if os.path.exists(file_name):
+                    os.remove(file_name)
+                    print(f"Cleaned up TTS file {file_name}")
+                return
+            except Exception as e:
+                # Windows may still hold the file open (e.g. WinError 32)
+                last_error = e
+                time.sleep(0.5)
+        print(f"Error cleaning up {file_name}: {last_error}")
+
+    def _ensure_say_worker(self, guild_id):
+        task = self.say_tasks.get(guild_id)
+        if task and not task.done():
+            return
+        self.say_tasks[guild_id] = asyncio.create_task(self._say_player(guild_id))
+
+    async def _say_player(self, guild_id):
+        queue = self.say_queues.setdefault(guild_id, asyncio.Queue())
+        while True:
+            file_name = await queue.get()
+            try:
+                guild = self.bot.get_guild(guild_id)
+                vc = guild.voice_client if guild else None
+                if not vc or not vc.is_connected():
+                    self._cleanup_file(file_name)
+                    continue
+                while vc.is_playing():
+                    await asyncio.sleep(0.25)
+                if not vc.is_connected():
+                    self._cleanup_file(file_name)
+                    continue
+                source = discord.FFmpegPCMAudio(
+                    executable=FFMPEG_EXECUTABLE, source=file_name
+                )
+                self.play_files[guild_id] = file_name
+                vc.play(
+                    source,
+                    after=lambda _error, f=file_name: self._cleanup_file(f),
+                )
+            except Exception as e:
+                print(f"Say player error: {e}")
+                self._cleanup_file(file_name)
+            finally:
+                if self.play_files.get(guild_id) == file_name:
+                    self.play_files.pop(guild_id, None)
+                queue.task_done()
+
+    @vc.command(description="Make Ok Bot speak", guild_ids=GUILD_IDS)
     @option("text", str, description="What Ok Bot should say")
     async def say(self, ctx, text: str):
+        await ctx.defer()
+
         vc = ctx.voice_client
 
-        if not vc:
-            return await ctx.respond(NO_VOICE_CHANNEL)
+        if not vc or not vc.is_connected():
+            return await ctx.edit(content=NO_VOICE_CHANNEL)
         if ctx.author.voice.channel.id != vc.channel.id:
-            return await ctx.respond(
-                "You must be in the same voice channel as the bot."
+            return await ctx.edit(
+                content="You must be in the same voice channel as the bot."
             )
 
-        await ctx.respond("Generating voice...")
+        await ctx.edit(content="Generating voice...")
 
         # Generate TTS audio
         try:
-            response = client.models.generate_content(
-                model=CHAT_MODEL,
-                contents=f"Read like an underwhelmed teenager: {text}",
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name="Fenrir",
+            fish_key = os.getenv("FISH_API_KEY")
+            if fish_key:
+                audio_bytes, suffix = await self._fish_tts(fish_key, text)
+                if audio_bytes is None:
+                    return await ctx.edit(
+                        content="TTS generation failed. Try again later"
+                    )
+            else:
+                generated = await client.aio.models.generate_content(
+                    model=CHAT_MODEL,
+                    contents=f"Read like an underwhelmed teenager: {text}",
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name="Fenrir",
+                                )
                             )
-                        )
+                        ),
                     ),
-                ),
-            )
-            data = response.candidates[0].content.parts[0].inline_data.data
-
-            def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
-                with wave.open(filename, "wb") as wf:
-                    wf.setnchannels(channels)
-                    wf.setsampwidth(sample_width)
-                    wf.setframerate(rate)
-                    wf.writeframes(pcm)
+                )
+                data = None
+                if generated.candidates:
+                    content = generated.candidates[0].content
+                    if content and content.parts and content.parts[0].inline_data:
+                        data = content.parts[0].inline_data.data
+                if not data:
+                    return await ctx.edit(
+                        content="TTS replied without audio. Try again later."
+                    )
+                audio_bytes = self._pcm_to_wav(data)
+                suffix = "wav"
 
             # Create temporary file (will be auto-cleaned by tempfile)
             import tempfile
 
-            fd, file_name = tempfile.mkstemp(suffix=".wav")
+            fd, file_name = tempfile.mkstemp(suffix=f".{suffix}")
             os.close(fd)
-            wave_file(file_name, data)
-            wave_file(file_name, data)
+            with open(file_name, "wb") as f:
+                f.write(audio_bytes)
             file_size = os.path.getsize(file_name)
             print(f"Wrote TTS file {file_name} ({file_size} bytes)")
 
-            # Play the audio in the voice channel
-            def cleanup_audio(error):
-                try:
-                    if os.path.exists(file_name):
-                        os.remove(file_name)
-                        print(f"Cleaned up TTS file {file_name}")
-                except Exception as e:
-                    print(f"Error cleaning up {file_name}: {e}")
-
-            source = discord.FFmpegPCMAudio(
-                executable=FFMPEG_EXECUTABLE, source=file_name
+            # Enqueue the audio so overlapping says play in order
+            self.say_queues.setdefault(ctx.guild.id, asyncio.Queue()).put_nowait(
+                file_name
             )
+            self._ensure_say_worker(ctx.guild.id)
 
-            if vc.is_playing():
-                # Clean up if already playing
-                cleanup_audio(None)
-                return await ctx.edit(content="Wait until current sound finishes.")
-            else:
-                vc.play(source, after=cleanup_audio)
+            position = self.say_queues[ctx.guild.id].qsize()
+            if position == 1 and vc.is_connected() and not vc.is_playing():
                 await ctx.edit(content="Speaking!")
+            else:
+                await ctx.edit(content=f"Queued at position {position}.")
 
         except genai.errors.ClientError as e:
             if "429" in str(e):
@@ -223,7 +321,7 @@ class VC(commands.Cog):
                 unix_timestamp = int(future_time_utc.timestamp())
                 discord_timestamp_string = f"<t:{unix_timestamp}:R>"
                 await ctx.send(
-                    f"Quota limited exceeded! Try again {discord_timestamp_string}"
+                    f"Quota limit exceeded! Try again {discord_timestamp_string}"
                 )
             else:
                 print(f"TTS generation error: {e}")
@@ -237,13 +335,16 @@ class VC(commands.Cog):
         autocomplete=basic_autocomplete(sound_names),
     )
     async def soundboard(self, ctx, sound):
+        await ctx.defer(ephemeral=True)
+
         vc = ctx.voice_client
-        if not vc:
-            await ctx.respond(NO_VOICE_CHANNEL)
+        if not vc or not vc.is_connected():
+            await ctx.respond(NO_VOICE_CHANNEL, ephemeral=True)
+            return
 
         elif ctx.author.voice.channel.id != vc.channel.id:
             return await ctx.respond(
-                "You must be in the same voice channel as the bot."
+                "You must be in the same voice channel as the bot.", ephemeral=True
             )
         else:
             audio = discord.FFmpegPCMAudio(
@@ -257,7 +358,43 @@ class VC(commands.Cog):
                 vc.play(audio)
                 await ctx.respond("Sound played!", ephemeral=True)
 
+    @vc.command(
+        description="Stop the current TTS and clear the queue", guild_ids=GUILD_IDS
+    )
+    async def stop(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            return await ctx.respond(NO_VOICE_CHANNEL)
+        if ctx.author.voice.channel.id != vc.channel.id:
+            return await ctx.respond(
+                "You must be in the same voice channel as the bot."
+            )
+
+        cleaned = 0
+        vc.stop()
+        playing = self.play_files.pop(ctx.guild.id, None)
+        if playing:
+            self._cleanup_file(playing)
+            cleaned += 1
+
+        queue = self.say_queues.get(ctx.guild.id)
+        if queue:
+            while not queue.empty():
+                try:
+                    file_name = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                queue.task_done()
+                self._cleanup_file(file_name)
+                cleaned += 1
+
+        await ctx.respond(
+            f"Stopped playback and cleared {cleaned} queued item(s)."
+        )
+
     def cog_unload(self):
+        for task in self.say_tasks.values():
+            task.cancel()
         for vc in self.bot.voice_clients:
             task = asyncio.create_task(vc.disconnect())
             self._disconnect_tasks.append(task)

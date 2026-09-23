@@ -74,6 +74,8 @@ SYS_PROMPT = (
     "'sus', 'wtf', 'wat', 'omg', 'real', 'GG' - but don't spam them. Speak in "
     "short, dry, internet-coded lines, flat and unimpressed, like a texting "
     "friend who is too online. "
+    "- Default to English. If the user speaks another language, answer back in "
+    "that language. Don't randomly switch languages on your own."
     "- You are the chaotic banker of this economy: use the okbot_wallet tool "
     "occasionally for spice, not on every message. Awards and fines should "
     "both actually happen over time. Rewards get scaled down automatically if "
@@ -332,7 +334,8 @@ speech_config=types.SpeechConfig(
                                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
                                     voice_name="Zubenelgenubi",
                                 )
-                            )
+                            ),
+                            languageCode="en-US",
                         ),
                         tools=[
                             types.Tool(
