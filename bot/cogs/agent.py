@@ -1,6 +1,7 @@
 import asyncio
 import array
 import collections
+import contextlib
 import importlib
 import os
 import queue as thread_queue
@@ -50,9 +51,11 @@ SYS_PROMPT = (
     "1. The wake phrase ('okay bot' / 'ok bot' or anything close) OPENS a "
     "conversation. Once a conversation is active, keep responding naturally "
     "to whoever speaks and follow-ups - they do NOT need to say the wake "
-    "phrase again. When the conversation clearly ends (people stop talking "
-    "or move on), it closes again, and from then on stay silent until "
-    "someone says the wake phrase. "
+    "phrase again. Treat an active conversation like a real back-and-forth: "
+    "sometimes ask the speaker a follow-up question, flip it back to them, or "
+    "banter to keep it flowing - but don't interrogate them or force it. When "
+    "the conversation clearly ends (people stop talking or move on), it closes "
+    "again, and from then on stay silent until someone says the wake phrase. " 
     "2. If you are not speaking, produce NOTHING - never announce that you're "
     "staying silent, never say 'no wake phrase', never make noise. Just don't "
     "talk. In a group chat, only chime in when addressed or when the moment "
@@ -619,7 +622,13 @@ speech_config=types.SpeechConfig(
                 if rs and rs.get("playing"):
                     src = session.get("source")
                     now = time.monotonic()
-                    if src is not None and src.drained() and now - rs.get("last_feed_ts", 0) > 3:
+                    idle = now - rs.get("last_feed_ts", 0)
+                    if (
+                        src is not None
+                        and src.drained()
+                        and idle > 3
+                        and rs.get("turn_done")
+                    ):
                         try:
                             if vc and vc.is_playing():
                                 vc.stop()
@@ -642,8 +651,54 @@ speech_config=types.SpeechConfig(
                     last_frames_ts = now
                 state = vc._connection if vc else None
                 dave = getattr(state, "dave_session", None) if state else None
-                if dave is None or not getattr(dave, "ready", False):
+                now = time.monotonic()
+                if dave is not None and not getattr(dave, "ready", False):
+                    # DAVE handshake is stalled. Until it's ready the bot can
+                    # neither hear (inbound packets are dropped) nor be heard
+                    # (outbound audio goes out unencrypted). The old code
+                    # bailed here and never recovered, so it stayed silent
+                    # until someone force-rejoined the voice channel.
+                    if getattr(state, "dave_protocol_version", 0) > 0:
+                        if session.get("dave_not_ready_since") is None:
+                            session["dave_not_ready_since"] = now
+                            print(
+                                "Agent: DAVE session created but not ready, "
+                                "watching..."
+                            )
+                        elif (
+                            now - session["dave_not_ready_since"] >= 10
+                            and now - last_rekey > 15
+                        ):
+                            last_rekey = now
+                            if session.get("rekeys", 0) >= 2:
+                                print(
+                                    "Agent: DAVE never got ready after "
+                                    "rekeys, hard-resetting voice connection"
+                                )
+                                session["rekeys"] = 0
+                                session["dave_not_ready_since"] = None
+                                asyncio.create_task(
+                                    self._full_voice_reset(session)
+                                )
+                            else:
+                                session["rekeys"] = (
+                                    session.get("rekeys", 0) + 1
+                                )
+                                print(
+                                    "Agent: DAVE session not ready, "
+                                    "rekeying DAVE session"
+                                )
+                                try:
+                                    await state.reinit_dave_session()
+                                except Exception as e:
+                                    print(
+                                        "Agent: DAVE reinit error: "
+                                        f"{type(e).__name__}: {e}"
+                                    )
                     continue
+                if session.get("dave_not_ready_since") is not None:
+                    print("Agent: DAVE session became ready")
+                session["dave_not_ready_since"] = None
                 users = set(
                     uid
                     for uid in getattr(state, "ssrc_user_map", {}).values()
@@ -660,8 +715,8 @@ speech_config=types.SpeechConfig(
                     total += stats.failures if stats else 0
                 delta = total - baseline
                 baseline = total
-                if delta >= 8 and time.monotonic() - last_rekey > 15:
-                    last_rekey = time.monotonic()
+                if delta >= 8 and now - last_rekey > 15:
+                    last_rekey = now
                     if session.get("rekeys", 0) >= 2:
                         print(
                             "Agent: DAVE decrypt still failing after "
@@ -675,9 +730,15 @@ speech_config=types.SpeechConfig(
                             "Agent: DAVE decrypt failing "
                             f"({delta} in 3s), rekeying DAVE session"
                         )
-                        await state.reinit_dave_session()
-            except Exception:
-                pass
+                        try:
+                            await state.reinit_dave_session()
+                        except Exception as e:
+                            print(
+                                "Agent: DAVE reinit error: "
+                                f"{type(e).__name__}: {e}"
+                            )
+            except Exception as e:
+                print(f"Agent watchdog error: {type(e).__name__}: {e}")
 
     async def _full_voice_reset(self, session):
         try:
@@ -715,7 +776,10 @@ speech_config=types.SpeechConfig(
             print(f"Agent voice reset recording: {type(e).__name__}: {e}")
         session["recording"] = True
         session["paused"] = False
-        session["source"] = LiveAudioSource()
+        rs = session.get("receiver_state") or {}
+        src = session.get("source")
+        if not (rs.get("playing") and src is not None and not src.drained()):
+            session["source"] = LiveAudioSource()
         print("Agent: voice reconnected for DAVE recovery")
 
     async def _flush_chat(self, live, session):
@@ -864,7 +928,7 @@ speech_config=types.SpeechConfig(
     async def _receive_audio(self, live, session, vc, source):
         state = {"said": [], "playing": False, "play_gen": 0, "last_feed_ts": 0,
              "holding": False, "drop_turn": False, "turn_ack": False,
-             "ack_spoken": False}
+             "ack_spoken": False, "turn_done": False}
         session["receiver_state"] = state
         handled_calls = set()
         while True:
@@ -1060,6 +1124,7 @@ speech_config=types.SpeechConfig(
             state["holding"] = False
             state["drop_turn"] = False
             state["turn_ack"] = False
+            state["turn_done"] = False
             if state["playing"]:
                 state["playing"] = False
                 self._stop_playback(vc)
@@ -1095,6 +1160,7 @@ speech_config=types.SpeechConfig(
                         source.set_input_rate(int(m.group(1)))
                     source.feed(part.inline_data.data)
                     state["last_feed_ts"] = time.monotonic()
+                    state["turn_done"] = False
                     if not state["playing"] and vc and not vc.is_playing():
                         if in_ack:
                             state["holding"] = True
@@ -1107,6 +1173,7 @@ speech_config=types.SpeechConfig(
                 state["drop_turn"] = False
                 state["holding"] = False
                 state["turn_ack"] = False
+                state["turn_done"] = True
                 state["said"] = []
                 return
             text = " ".join(s.strip() for s in state["said"])
@@ -1118,6 +1185,7 @@ speech_config=types.SpeechConfig(
                     source.clear()
                 state["holding"] = False
             state["turn_ack"] = False
+            state["turn_done"] = True
             if text:
                 session["last_response"] = text
                 session["last_response_ts"] = int(time.time())
@@ -1139,6 +1207,10 @@ speech_config=types.SpeechConfig(
         self._pause_input(session)
         state["play_gen"] += 1
         self._schedule_log_edit(session)
+        vc_state = getattr(vc, "_connection", None) if vc else None
+        dave = getattr(vc_state, "dave_session", None) if vc_state else None
+        if dave is not None and not getattr(dave, "ready", False):
+            print("Agent: playing while DAVE session not ready (inaudible)")
         try:
             vc.play(source)
             state["playing"] = True
@@ -1199,6 +1271,61 @@ speech_config=types.SpeechConfig(
             self._stop_playback(vc)
             state["playing"] = False
             await self._resume_input(session)
+
+    # ---------- teardown ----------
+
+    def _teardown_session(self, guild_id, reason=""):
+        """Synchronous half of stopping a session.
+
+        Drops it from the registry, signals the live task, and silences
+        playback. Kept sync because cog_unload cannot await.
+        """
+        session = self.active.pop(guild_id, None)
+        if session is None:
+            return None
+
+        session["live_stop"].set()
+        session["recording"] = False
+        session["paused"] = True
+
+        vc = session.get("vc")
+        try:
+            if vc is not None and vc.is_recording():
+                vc.stop_recording()
+        except Exception as e:
+            print(
+                f"Agent teardown stop_recording error: "
+                f"{type(e).__name__}: {e}"
+            )
+        self._stop_playback(vc)
+
+        source = session.get("source")
+        if source is not None:
+            source.clear()
+
+        suffix = f" ({reason})" if reason else ""
+        print(f"Agent: session stopped{suffix}")
+        return session
+
+    async def stop_session(self, guild_id, reason=""):
+        """Stop the live session for a guild. Returns True if one was running.
+
+        Other cogs call this when the bot leaves the voice channel. The agent
+        rides on the guild's shared voice client, so a disconnect would
+        otherwise leave a Gemini Live socket and a Discord recorder running
+        against a dead connection.
+        """
+        session = self._teardown_session(guild_id, reason=reason)
+        if session is None:
+            return False
+
+        task = session.get("live_task")
+        if task and not task.done():
+            with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=5)
+            if not task.done():
+                task.cancel()
+        return True
 
     # ---------- commands ----------
 
@@ -1268,16 +1395,9 @@ speech_config=types.SpeechConfig(
     async def stop(self, ctx):
         await ctx.defer()
         try:
-            session = self.active.pop(ctx.guild.id, None)
-            if session:
-                session["live_stop"].set()
-                session["recording"] = False
-                task = session.get("live_task")
-                if task and not task.done():
-                    try:
-                        await asyncio.wait_for(task, timeout=10)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        task.cancel()
+            await self.stop_session(ctx.guild.id, reason="stop command")
+            # The session's own client is the guild's shared one, but a reset
+            # mid-session can leave the recorder on a stale reference.
             vc = ctx.voice_client
             if vc and vc.is_connected() and vc.is_recording():
                 try:
@@ -1319,7 +1439,13 @@ speech_config=types.SpeechConfig(
         await ctx.edit(content="Memory cleared.")
 
     def cog_unload(self):
-        pass
+        # Reloading or unloading the cog must not leave a Gemini Live session
+        # or a Discord recorder running against a class that no longer exists.
+        for guild_id in list(self.active):
+            session = self._teardown_session(guild_id, reason="cog unload")
+            task = session.get("live_task") if session else None
+            if task and not task.done():
+                task.cancel()
 
 
 def setup(bot):

@@ -37,6 +37,22 @@ class VC(commands.Cog):
     async def on_connect(self):
         print("VC commands loaded")
 
+    async def _stop_agent(self, guild_id, reason):
+        """Shut down the live voice agent when the bot leaves the channel.
+
+        The agent rides on this guild's shared voice client, so a disconnect
+        orphans its Gemini Live socket and recorder. It deliberately repairs its
+        own transient drops via _full_voice_reset, so this is only called on
+        real departures - never from a generic voice_state hook.
+        """
+        agent = self.bot.get_cog("Agent")
+        if agent is None:
+            return
+        try:
+            await agent.stop_session(guild_id, reason=reason)
+        except Exception as e:
+            print(f"Failed to stop agent ({reason}): {type(e).__name__}: {e}")
+
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         """Disconnect if bot is alone in voice channel"""
@@ -51,6 +67,7 @@ class VC(commands.Cog):
         if len(tracked_channel.members) != 1 or tracked_channel.members[0] != self.bot.user:
             return
 
+        await self._stop_agent(member.guild.id, reason="channel emptied")
         await voice_client.disconnect()
         if member.guild.id in self.join_messages:
             try:
@@ -108,6 +125,7 @@ class VC(commands.Cog):
         voice_client = ctx.guild.voice_client
         if voice_client and voice_client.is_connected():
             channel_name = voice_client.channel.name
+            await self._stop_agent(ctx.guild.id, reason="bot left the channel")
             await voice_client.disconnect()
 
             # Edit the stored join message to indicate disconnect
