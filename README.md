@@ -53,9 +53,11 @@
 
 ## About The Project
 
-Ok Bot is a Discord bot built with Python and [py-cord](https://docs.pycord.dev/). It features an AI chat powered by Google Gemini, a full economy system with shops and gambling, Brawl Stars reference tools, voice channel commands with TTS, and a variety of utility commands.
+Ok Bot is a Discord bot built with Python and [py-cord](https://docs.pycord.dev/). It features an AI chat powered by Google Gemini, a live AI voice agent, a full economy system with shops and gambling, Brawl Stars reference tools, voice channel commands with TTS, and a variety of utility commands.
 
 When mentioned in chat, Ok Bot responds using Gemini with a sarcastic, internet-coded personality. It can also award or fine users coins based on how it "feels" about messages.
+
+Join a voice channel and run `/agent start` and Ok Bot will listen and talk back out loud, in a real-time conversation, using [Gemini's Live API](https://ai.google.dev/gemini-api/docs/live).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -63,7 +65,8 @@ When mentioned in chat, Ok Bot responds using Gemini with a sarcastic, internet-
 
 * [![Python]][Python-url]
 * [![py-cord]][py-cord-url]
-* [![SQLite]][SQLite-url]
+* ![SQLite][SQLite-img]
+* ![FFmpeg][FFmpeg-img]
 * [![Gemini API]][Gemini-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -107,6 +110,7 @@ python bot/main.py
 If done correctly, the terminal should output:
 
 ```
+Agent commands loaded
 Brawl Stars commands loaded
 Economy commands loaded
 Fun commands loaded
@@ -134,6 +138,26 @@ Ok Bot#XXXX has connected to Discord!
 | `@Ok Bot` | Mention the bot to chat. It responds with a sarcastic Gemini-powered personality and occasionally awards/fines coins. |
 | `/stop` | Stop Ok Bot's current response in this channel |
 | `/clear` | Clear the chat history with Ok Bot in this channel |
+
+### AI Voice Agent
+| Command | Description |
+|---------|-------------|
+| `/agent start` | Join your voice channel and start a live conversation. Say **"Ok Bot..."** to open it. |
+| `/agent log` | See what the agent thinks you said and how it replied out loud |
+| `/agent stop` | Stop the live voice session (leaves the voice channel connected) |
+| `/agent reset` | Wipe the agent's conversation memory and start fresh, without dropping the voice session |
+
+The agent runs a persistent bidirectional audio stream against Gemini's Live API, so it can interrupt, be interrupted, and hold a multi-turn conversation without a round trip per message. It uses the same wallet and anti-fraud logic as the text chat, and can award or fine coins mid-sentence.
+
+#### How the voice pipeline works
+
+Most of the work here is below the `py-cord` API:
+
+- **Capture** — a custom `discord.sinks.Sink` writes each speaker's raw PCM into a thread-safe queue. The bot's own frames are filtered out by user ID.
+- **Voice activity detection** — a `SpeechGate` computes RMS power per 20ms frame and holds the gate open for a hangover window (~200ms) so word endings aren't clipped. Silent frames are dropped before they ever reach the network.
+- **Resampling** — 48kHz stereo int16 from Discord is averaged down to 16kHz mono (averaging rather than decimation, which acts as a cheap anti-alias filter) to match Gemini's input format.
+- **Playback** — a custom `discord.AudioSource` is fed from the event loop but drained on the player's audio thread via a `SimpleQueue`, with a `drained()` signal so a finished turn stops the stream instead of playing silence.
+- **DAVE** — Discord voice is end-to-end encrypted. Until the DAVE handshake completes the bot can neither hear (inbound packets are dropped) nor be heard (outbound audio goes out unencrypted). A watchdog tracks handshake state and per-SSRC decrypt failure counts to decide between rekeying the session and hard-resetting the voice connection, so the bot recovers instead of going permanently silent.
 
 ### Economy
 | Command | Description |
@@ -250,5 +274,7 @@ Project Link: [https://github.com/BenjaminHGong/ok-bot](https://github.com/Benja
 [py-cord-url]: https://docs.pycord.dev/
 [SQLite]: https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white
 [SQLite-url]: https://www.sqlite.org/
+[FFmpeg-img]: https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white
+[FFmpeg-url]: https://ffmpeg.org/
 [Gemini API]: https://img.shields.io/badge/Gemini_API-4285F4?style=for-the-badge&logo=google&logoColor=white
 [Gemini-url]: https://ai.google.dev/
