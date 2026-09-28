@@ -339,6 +339,20 @@ class Fun(commands.Cog):
         )
         return [{"type": "text", "text": block}]
 
+    async def _fetch_reference(self, message):
+        # The message being replied to can be deleted (mod cleanup) before we
+        # get around to reading it. Treat that as "no context" instead of
+        # failing the whole turn.
+        if not message.reference:
+            return None
+        try:
+            return await message.channel.fetch_message(message.reference.message_id)
+        except discord.errors.HTTPException as e:
+            if not self._is_unknown_message_error(e):
+                raise
+            print(f"Referenced message gone: {e}")
+            return None
+
     async def _build_batched_interaction_input(self, messages, after_id=None):
         interaction_input = []
 
@@ -353,11 +367,8 @@ class Fun(commands.Cog):
         )
 
         for message in messages:
-            context_message = None
-            context_attachments = []
-            if message.reference:
-                context_message = await message.channel.fetch_message(message.reference.message_id)
-                context_attachments = context_message.attachments
+            context_message = await self._fetch_reference(message)
+            context_attachments = context_message.attachments if context_message else []
 
             interaction_input.extend(
                 await self._build_interaction_input(message, context_message, context_attachments)
@@ -378,11 +389,8 @@ class Fun(commands.Cog):
         if "timestamp" not in hist_obj or now - hist_obj.get("timestamp", 0) > 86400:
             hist_obj = {"interaction_id": None, "timestamp": now}
 
-        context_message = None
-        context_attachments = []
-        if message.reference:
-            context_message = await message.channel.fetch_message(message.reference.message_id)
-            context_attachments = context_message.attachments
+        context_message = await self._fetch_reference(message)
+        context_attachments = context_message.attachments if context_message else []
 
         return chat_history, chan_id, now, hist_obj, context_message, context_attachments
 
@@ -715,7 +723,7 @@ class Fun(commands.Cog):
         if type(error).__name__ == "RateLimitError":
             return True
 
-        return "429" in str(error)
+        return re.search(r"\b429\b", str(error)) is not None
 
     def _extract_retry_seconds(self, error):
         retry_match = re.search(r"retry in ([0-9.]+)s", str(error))
@@ -783,21 +791,35 @@ class Fun(commands.Cog):
         }
         return await asyncio.to_thread(client.models.generate_content, **legacy_kwargs)
 
+    def _is_unknown_message_error(self, error):
+        # Discord rejects a reply whose target was deleted with a 400
+        # (50035 "In message_reference: Unknown message"), not a 404.
+        if getattr(error, "code", None) == 10008:
+            return True
+        return "unknown message" in str(error).lower()
+
     async def _send_chunked_response(self, message, text, reply_to=None):
         first = True
         for chunk in chunk_text(text, 2000):
             if not chunk.strip():
                 continue
 
-            try:
-                if first and reply_to is not None:
+            sent = False
+            if first and reply_to is not None:
+                try:
                     await message.channel.send(chunk, reference=reply_to)
-                else:
-                    await message.channel.send(chunk)
-            except discord.errors.HTTPException as e:
-                print(f"Failed to send chunk: {e}")
-                await message.channel.send("Failed to send message. Try again.")
-                raise
+                    sent = True
+                except discord.errors.HTTPException as e:
+                    if not self._is_unknown_message_error(e):
+                        raise
+                    # The ping we were replying to got deleted (usually mod
+                    # cleanup) while the model was generating. Post without the
+                    # reference instead of throwing the whole response away.
+                    print(f"Reply target gone, sending without reference: {e}")
+                    reply_to = None
+
+            if not sent:
+                await message.channel.send(chunk)
             first = False
 
     async def _save_interaction_state(self, chat_history, chan_id, interaction_id, now, last_seen_message_id=None):
@@ -902,18 +924,29 @@ class Fun(commands.Cog):
             if self._is_quota_error(e):
                 await self._send_rate_limit_message(message.channel, e)
             else:
-                await message.channel.send("API error occurred. Please try again later.")
+                await self._notify(message.channel, "API error occurred. Please try again later.")
+        except discord.errors.HTTPException as e:
+            print(f"Discord API error ({type(e).__name__}, code={getattr(e, 'code', None)}): {e}")
+            if self._is_unknown_message_error(e):
+                return
+            await self._notify(message.channel, "Failed to post in this channel. Try again.")
         except Exception as e:
-            print(f"Gemini API error ({type(e).__name__}, code={getattr(e, 'code', None)}): {e}")
+            print(f"Unexpected error ({type(e).__name__}, code={getattr(e, 'code', None)}): {e}")
             if self._is_quota_error(e):
                 await self._send_rate_limit_message(message.channel, e)
                 return
-            else:
-                await message.channel.send("An unexpected error occurred. Please try again.")
+            await self._notify(message.channel, "An unexpected error occurred. Please try again.")
         finally:
             typing_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await typing_task
+
+    async def _notify(self, channel, text):
+        # Error reporting must never itself raise and kill the worker.
+        try:
+            await channel.send(text)
+        except discord.errors.HTTPException as e:
+            print(f"Failed to send error notice: {e}")
 
     async def _process_pending_messages(self, chan_id):
         try:
