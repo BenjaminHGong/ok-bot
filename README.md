@@ -65,8 +65,8 @@ Join a voice channel and run `/agent start` and Ok Bot will listen and talk back
 
 * [![Python]][Python-url]
 * [![py-cord]][py-cord-url]
-* ![SQLite][SQLite-img]
-* ![FFmpeg][FFmpeg-img]
+* [![SQLite]][SQLite-url]
+* [![FFmpeg]][FFmpeg-url]
 * [![Gemini API]][Gemini-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -78,7 +78,8 @@ Join a voice channel and run `/agent start` and Ok Bot will listen and talk back
 * [Python 3.8+](https://www.python.org/downloads/)
 * [FFMPEG](https://www.ffmpeg.org/) (required for voice channel features)
 * A [Discord bot token](https://discord.com/developers/applications/)
-* A [Google Gemini API key](https://aistudio.google.com/apikey)
+* A [Google Gemini API key](https://aistudio.google.dev/apikey)
+* A [Fish Audio API key](https://fish.audio/) (optional, recommended — see [Text-to-Speech](#text-to-speech))
 
 ### Installation
 
@@ -93,6 +94,10 @@ Create a `.env` file in the project root with your tokens:
 ```
 DISCORD_TOKEN=your_discord_bot_token
 GEMINI_API_KEY=your_gemini_api_key
+
+# Optional. Without these, /vc say falls back to Gemini TTS.
+FISH_API_KEY=your_fish_audio_api_key
+FISH_VOICE_ID=your_fish_audio_reference_id
 ```
 
 Run the setup script to initialize data files:
@@ -119,6 +124,15 @@ Utility commands loaded
 VC commands loaded
 Ok Bot#XXXX has connected to Discord!
 ```
+
+### Text-to-Speech
+
+`/vc say` uses whichever provider you configure:
+
+- **`FISH_API_KEY` set** — text is sent to [Fish Audio](https://fish.audio/) (`s2.1-pro-free`). `FISH_VOICE_ID` optionally pins a specific reference voice; without it Fish picks a default.
+- **`FISH_API_KEY` unset** — falls back to Gemini's TTS model (`gemini-2.5-flash-preview-tts`) with a built-in voice. This works with no extra configuration, so the Fish key is optional.
+
+The Gemini path returns headerless raw PCM, which is wrapped into a WAV container in memory before being handed to ffmpeg, since Discord cannot consume a headerless stream directly.
 
 ### Discord Developer Portal Setup
 
@@ -274,7 +288,7 @@ Project Link: [https://github.com/BenjaminHGong/ok-bot](https://github.com/Benja
 [py-cord-url]: https://docs.pycord.dev/
 [SQLite]: https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white
 [SQLite-url]: https://www.sqlite.org/
-[FFmpeg-img]: https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white
+[FFmpeg]: https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white
 [FFmpeg-url]: https://ffmpeg.org/
 [Gemini API]: https://img.shields.io/badge/Gemini_API-4285F4?style=for-the-badge&logo=google&logoColor=white
 [Gemini-url]: https://ai.google.dev/
